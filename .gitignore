@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/uv.lock
+
+# Build outputs
+frontend/dist/
+frontend/build/
+backend/dist/
+backend/build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+backend/htmlcov/
+backend/.coverage
+
+# Database
+*.sqlite
+*.db
+postgres_data/
+redis_data/
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+*.tar.gz
+*.zip
+.cache/
+.tmp/
+temp/
+# Python cache
+**/__pycache__/
+*.pyc

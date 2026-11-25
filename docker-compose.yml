@@ -1,0 +1,175 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: mylife-postgres
+    environment:
+      POSTGRES_DB: mylife
+      POSTGRES_USER: mylife
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mylife_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mylife -d mylife"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+  # Redis for caching and Celery broker
+  redis:
+    image: redis:7-alpine
+    container_name: mylife-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: mylife-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mylife:${POSTGRES_PASSWORD:-mylife_dev_password}@postgres:5432/mylife
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - CORS_ALLOW_CREDENTIALS=true
+      - CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
+      - CORS_ALLOW_HEADERS=*
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-key-for-development}
+      - DEFAULT_AI_PROVIDER=openai
+      - DEFAULT_AI_MODEL=gpt-4o
+    volumes:
+      # Mount only for hot-reloading specific directories, not the whole app
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - /app/__pycache__
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+  # Celery Worker for background tasks
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: mylife-celery-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mylife:${POSTGRES_PASSWORD:-mylife_dev_password}@postgres:5432/mylife
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ENVIRONMENT=development
+      - LOG_LEVEL=INFO
+    volumes:
+      # Mount only for hot-reloading specific directories, not the whole app
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - /app/__pycache__
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4 -Q default,reminders,notifications,maintenance
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+  # Celery Beat for scheduled tasks
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: mylife-celery-beat
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mylife:${POSTGRES_PASSWORD:-mylife_dev_password}@postgres:5432/mylife
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ENVIRONMENT=development
+      - LOG_LEVEL=INFO
+    volumes:
+      # Mount only for hot-reloading specific directories, not the whole app
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - celery_beat_schedule:/app
+      - /app/__pycache__
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule=/app/celerybeat-schedule
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+  # Frontend Development Server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: mylife-frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000/graphql
+      - VITE_WS_URL=ws://localhost:8000/graphql
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/dist
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    restart: unless-stopped
+    networks:
+      - mylife-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  celery_beat_schedule:
+
+networks:
+  mylife-network:
+    driver: bridge
