@@ -10,19 +10,19 @@ import enum
 
 class Theme(str, enum.Enum):
     """Theme enumeration."""
-    LIGHT = "light"
-    DARK = "dark"
-    SYSTEM = "system"
+    LIGHT = "LIGHT"
+    DARK = "DARK"
+    SYSTEM = "SYSTEM"
 
 
 class CalendarView(str, enum.Enum):
     """Calendar default view enumeration."""
-    MONTH = "month"
-    WEEK = "week"
-    DAY = "day"
-    YEAR = "year"
-    UPCOMING = "upcoming"
-    PAST = "past"
+    MONTH = "MONTH"
+    WEEK = "WEEK"
+    DAY = "DAY"
+    YEAR = "YEAR"
+    UPCOMING = "UPCOMING"
+    PAST = "PAST"
 
 
 class UserSettings(Base):

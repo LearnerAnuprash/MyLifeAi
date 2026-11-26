@@ -17,14 +17,10 @@ import {
   BellOutlined,
   RobotOutlined,
   GlobalOutlined,
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
   TagOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
-  IndentOutlined,
-  OutdentOutlined,
+  SunOutlined,
+  MoonOutlined,
+  LaptopOutlined,
 } from "@ant-design/icons";
 import { CategoryManagement } from "@/components/categories";
 import { useTheme } from "@/store/themeStore";
@@ -32,62 +28,7 @@ import { useAuthStore } from "@/store/authStore";
 import { graphqlRequestWithAuth } from "@/utils/graphqlClient";
 import clsx from "clsx";
 import { AppInput, AppSelect } from "@/components/ui";
-
-const SETTINGS_QUERY = `
-  query Me {
-    me {
-      id
-      email
-      fullName
-      avatarUrl
-      timezone
-      locale
-      settings {
-        theme
-        calendarDefaultView
-        weekStartDay
-        defaultReminderMinutes
-        notificationEmail
-        notificationPush
-        aiProvider
-        aiModel
-        language
-        dateFormat
-        timeFormat
-      }
-    }
-  }
-`;
-
-const UPDATE_SETTINGS_MUTATION = `
-  mutation UpdateSettings($input: UpdateSettingsInput!) {
-    updateSettings(input: $input) {
-      theme
-      calendarDefaultView
-      weekStartDay
-      defaultReminderMinutes
-      notificationEmail
-      notificationPush
-      aiProvider
-      aiModel
-      language
-      dateFormat
-      timeFormat
-    }
-  }
-`;
-
-const UPDATE_PROFILE_MUTATION = `
-  mutation UpdateProfile($input: UpdateProfileInput!) {
-    updateProfile(input: $input) {
-      id
-      fullName
-      avatarUrl
-      timezone
-      locale
-    }
-  }
-`;
+import { UPDATE_SETTINGS_MUTATION } from "@/graphql/operations";
 
 const settingsSchema = z.object({
   // Profile
@@ -204,9 +145,6 @@ export function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("profile");
   const [isSaving, setIsSaving] = useState(false);
-  const [aiProvider, setAiProvider] = useState(
-    user?.settings?.aiProvider || "openai",
-  );
 
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
@@ -214,11 +152,11 @@ export function SettingsPage() {
       fullName: user?.fullName || "",
       timezone: user?.timezone || "UTC",
       locale: user?.locale || "en",
-      theme: user?.settings?.theme || "system",
-      calendarDefaultView: user?.settings?.calendarDefaultView || "month",
+      theme: (user?.settings?.theme ?? "SYSTEM").toLowerCase() as SettingsForm["theme"],
+      calendarDefaultView: (user?.settings?.calendarDefaultView ?? "MONTH").toLowerCase() as SettingsForm["calendarDefaultView"],
       weekStartDay: user?.settings?.weekStartDay || 0,
       dateFormat: user?.settings?.dateFormat || "YYYY-MM-DD",
-      timeFormat: user?.settings?.timeFormat || "24h",
+      timeFormat: user?.settings?.timeFormat === "12h" ? "12h" : "24h",
       defaultReminderMinutes: user?.settings?.defaultReminderMinutes || [
         1440, 60, 15,
       ],
@@ -236,21 +174,17 @@ export function SettingsPage() {
     setTheme(newTheme);
   };
 
-  const handleAiProviderChange = (provider: string) => {
-    setAiProvider(provider);
-    form.setValue("aiProvider", provider);
-    // Reset model to default for new provider
-    const defaultModel =
-      AI_MODELS[provider as keyof typeof AI_MODELS]?.[0] || "";
-    form.setValue("aiModel", defaultModel);
-  };
-
   const onFinish = async (values: SettingsForm) => {
     setIsSaving(true);
     try {
-      const response = await graphqlRequestWithAuth<{ updateSettings: any }>(
+      const input = {
+        ...values,
+        theme: values.theme?.toUpperCase(),
+        calendarDefaultView: values.calendarDefaultView?.toUpperCase(),
+      };
+      const response = await graphqlRequestWithAuth<{ updateSettings: unknown }>(
         UPDATE_SETTINGS_MUTATION,
-        { input: values },
+        { input },
       );
 
       if (response.data?.updateSettings) {
@@ -562,7 +496,7 @@ export function SettingsPage() {
               label="Model"
               placeholder="Select model"
               options={
-                AI_MODELS[aiProvider as keyof typeof AI_MODELS]?.map((m) => ({
+                AI_MODELS[(form.watch("aiProvider") || "openai") as keyof typeof AI_MODELS]?.map((m) => ({
                   value: m,
                   label: m,
                 })) || []
@@ -602,5 +536,3 @@ export function SettingsPage() {
     </div>
   );
 }
-
-import { SunOutlined, MoonOutlined, LaptopOutlined, IndentedOutlined } from "@ant-design/icons";

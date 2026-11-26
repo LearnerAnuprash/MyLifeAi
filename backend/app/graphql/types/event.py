@@ -39,7 +39,7 @@ class Event:
     is_recurring: bool
     rrule: Optional[str]
     rrule_original_start: Optional[DateTime]
-    recurrence_exceptions: List[UUID]
+    recurrence_exceptions: List[DateTime]
     preparation_notes: Optional[str]
     completed_at: Optional[DateTime]
     created_at: DateTime

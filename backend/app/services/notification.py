@@ -1,14 +1,14 @@
 """Notification service."""
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.notification import Notification, NotificationCategory
 from app.graphql.types.notification import Notification as GQLNotification, NotificationConnection, NotificationEdge
 from app.graphql.types.event import PageInfo
+from app.graphql.serializers import notification_to_gql
 
 
 class NotificationService:
@@ -57,7 +57,7 @@ class NotificationService:
         if has_next_page:
             notifications = notifications[:first]
 
-        gql_notifications = [await self._notification_to_gql(n) for n in notifications]
+        gql_notifications = [notification_to_gql(n) for n in notifications]
 
         edges = [
             NotificationEdge(node=notif, cursor=str(notif.id))
@@ -122,12 +122,12 @@ class NotificationService:
             raise ValueError("Notification not found")
 
         notification.is_read = True
-        notification.read_at = datetime.utcnow()
+        notification.read_at = datetime.now(timezone.utc)
 
         await self.db.commit()
         await self.db.refresh(notification)
 
-        return await self._notification_to_gql(notification)
+        return notification_to_gql(notification)
 
     async def mark_all_read(self, user_id: uuid.UUID) -> bool:
         """Mark all notifications as read."""
@@ -141,7 +141,7 @@ class NotificationService:
 
         for notif in notifications:
             notif.is_read = True
-            notif.read_at = datetime.utcnow()
+            notif.read_at = datetime.now(timezone.utc)
 
         await self.db.commit()
         return True
@@ -190,19 +190,4 @@ class NotificationService:
         await self.db.commit()
         await self.db.refresh(notification)
 
-        return await self._notification_to_gql(notification)
-
-    async def _notification_to_gql(self, notification: Notification) -> GQLNotification:
-        """Convert Notification model to GraphQL type."""
-        return GQLNotification(
-            id=notification.id,
-            user_id=notification.user_id,
-            type=notification.type,
-            title=notification.title,
-            body=notification.body,
-            reference_id=notification.reference_id,
-            reference_type=notification.reference_type,
-            is_read=notification.is_read,
-            read_at=notification.read_at,
-            created_at=notification.created_at,
-        )
+        return notification_to_gql(notification)

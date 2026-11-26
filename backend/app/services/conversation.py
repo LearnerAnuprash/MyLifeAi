@@ -1,15 +1,25 @@
 """Conversation service."""
-from typing import List, Optional
+from typing import Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.conversation import Conversation, Message, ConversationRole
+from app.db.session import async_session_maker
+from app.models.conversation import Conversation, ConversationRole, Message
+from app.models.user import User
 from app.graphql.types.inputs import CreateConversationInput, SendMessageInput
-from app.graphql.types.conversation import Conversation as GQLConversation, Message as GQLMessage
+from app.graphql.types.conversation import (
+    Conversation as GQLConversation,
+    ConversationConnection,
+    ConversationEdge,
+)
+from app.graphql.types.event import PageInfo
 from app.graphql.types.payloads import SendMessagePayload
+from app.graphql.serializers import conversation_to_gql, message_to_gql
+from app.services.ai import AIService, get_planner_response
 
 
 class ConversationService:
@@ -23,14 +33,17 @@ class ConversationService:
         user_id: uuid.UUID,
         first: int = 20,
         after: Optional[str] = None,
-    ) -> GQLConversation:
+    ) -> ConversationConnection:
         """Get user's conversations with pagination."""
-        query = select(Conversation).where(
-            Conversation.user_id == user_id,
-            Conversation.deleted_at.is_(None),
-        ).options(
-            selectinload(Conversation.messages),
-        ).order_by(Conversation.updated_at.desc())
+        query = (
+            select(Conversation)
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.deleted_at.is_(None),
+            )
+            .options(selectinload(Conversation.messages))
+            .order_by(Conversation.updated_at.desc())
+        )
 
         if after:
             try:
@@ -52,10 +65,31 @@ class ConversationService:
         if has_next_page:
             conversations = conversations[:first]
 
-        gql_conversations = [await self._conversation_to_gql(c) for c in conversations]
+        edges = [
+            ConversationEdge(node=conversation_to_gql(conversation), cursor=str(conversation.id))
+            for conversation in conversations
+        ]
 
-        # Need to return connection type - this is a simplified version
-        return gql_conversations
+        count_result = await self.db.execute(
+            select(func.count(Conversation.id)).where(
+                Conversation.user_id == user_id,
+                Conversation.deleted_at.is_(None),
+            )
+        )
+        total_count = count_result.scalar() or 0
+
+        page_info = PageInfo(
+            has_next_page=has_next_page,
+            has_previous_page=after is not None,
+            start_cursor=edges[0].cursor if edges else None,
+            end_cursor=edges[-1].cursor if edges else None,
+        )
+
+        return ConversationConnection(
+            edges=edges,
+            page_info=page_info,
+            total_count=total_count,
+        )
 
     async def get_conversation(
         self,
@@ -77,7 +111,7 @@ class ConversationService:
         if not conversation:
             return None
 
-        return await self._conversation_to_gql(conversation)
+        return conversation_to_gql(conversation)
 
     async def create_conversation(
         self,
@@ -97,7 +131,7 @@ class ConversationService:
         await self.db.commit()
         await self.db.refresh(conversation)
 
-        return await self._conversation_to_gql(conversation)
+        return conversation_to_gql(conversation)
 
     async def update_conversation(
         self,
@@ -126,7 +160,7 @@ class ConversationService:
         await self.db.commit()
         await self.db.refresh(conversation)
 
-        return await self._conversation_to_gql(conversation)
+        return conversation_to_gql(conversation)
 
     async def delete_conversation(
         self,
@@ -146,7 +180,7 @@ class ConversationService:
         if not conversation:
             raise ValueError("Conversation not found")
 
-        conversation.deleted_at = datetime.utcnow()
+        conversation.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
 
@@ -155,8 +189,7 @@ class ConversationService:
         user_id: uuid.UUID,
         input: SendMessageInput,
     ) -> SendMessagePayload:
-        """Send a message and get AI response."""
-        # Get conversation
+        """Send a message and get an AI response with tool calling."""
         result = await self.db.execute(
             select(Conversation)
             .where(
@@ -171,69 +204,61 @@ class ConversationService:
         if not conversation:
             raise ValueError("Conversation not found")
 
-        # Create user message
         user_message = Message(
             conversation_id=conversation.id,
             role=ConversationRole.USER,
             content=input.content,
             tool_calls=None,
             tool_call_id=None,
-            metadata=None,
+            message_metadata=None,
         )
         self.db.add(user_message)
+        await self.db.commit()
+        await self.db.refresh(user_message)
 
-        # TODO: Call AI service to get response
-        # For now, create a placeholder assistant message
+        messages = []
+        if conversation.system_prompt:
+            messages.append({"role": "system", "content": conversation.system_prompt})
+        for msg in conversation.messages:
+            messages.append({"role": msg.role.value, "content": msg.content or ""})
+        messages.append({"role": "user", "content": input.content})
+
+        timezone_result = await self.db.execute(
+            select(User.timezone).where(User.id == user_id)
+        )
+        user_timezone = timezone_result.scalar_one_or_none() or "UTC"
+
+        ai_response = await get_planner_response(
+            user_message=input.content,
+            conversation_history=messages[:-1],
+            user_context={
+                "conversation_id": str(conversation.id),
+                "timezone": user_timezone,
+                "model_provider": "mock",
+                "model_name": "gpt-4o",
+            },
+            ai_service=AIService(),
+            user_id=user_id,
+            db_session_factory=async_session_maker,
+        )
+
         assistant_message = Message(
             conversation_id=conversation.id,
             role=ConversationRole.ASSISTANT,
-            content="AI response placeholder - integrate with AIService",
+            content=ai_response,
             tool_calls=None,
             tool_call_id=None,
-            metadata=None,
+            message_metadata=None,
         )
         self.db.add(assistant_message)
 
-        # Update conversation timestamp
-        conversation.updated_at = datetime.utcnow()
+        conversation.updated_at = datetime.now(timezone.utc)
 
         await self.db.commit()
-        await self.db.refresh(user_message)
         await self.db.refresh(assistant_message)
 
         return SendMessagePayload(
-            user_message=await self._message_to_gql(user_message),
-            assistant_message=await self._message_to_gql(assistant_message),
+            user_message=message_to_gql(user_message),
+            assistant_message=message_to_gql(assistant_message),
         )
 
-    async def _conversation_to_gql(self, conversation: Conversation) -> GQLConversation:
-        """Convert Conversation model to GraphQL type."""
-        messages = []
-        if conversation.messages:
-            for msg in sorted(conversation.messages, key=lambda m: m.created_at):
-                messages.append(await self._message_to_gql(msg))
-
-        return GQLConversation(
-            id=conversation.id,
-            user_id=conversation.user_id,
-            title=conversation.title,
-            model_provider=conversation.model_provider,
-            model_name=conversation.model_name,
-            system_prompt=conversation.system_prompt,
-            messages=messages,
-            created_at=conversation.created_at,
-            updated_at=conversation.updated_at,
-        )
-
-    async def _message_to_gql(self, message: Message) -> GQLMessage:
-        """Convert Message model to GraphQL type."""
-        return GQLMessage(
-            id=message.id,
-            conversation_id=message.conversation_id,
-            role=message.role,
-            content=message.content,
-            tool_calls=message.tool_calls,
-            tool_call_id=message.tool_call_id,
-            metadata=message.metadata,
-            created_at=message.created_at,
-        )

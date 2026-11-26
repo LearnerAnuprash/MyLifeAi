@@ -1,22 +1,12 @@
 """Maintenance Celery tasks."""
-from datetime import datetime, timedelta
-import asyncio
+from datetime import datetime, timedelta, timezone
 from celery import shared_task
-from sqlalchemy import delete, and_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
 
 from app.db.session import async_session_maker
+from app.workers.utils import logger, run_async
 from app.models.event import EventReminder
 from app.models.notification import Notification
-
-
-def run_async(coro):
-    """Run async function in new event loop."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 @shared_task(bind=True, max_retries=3)
@@ -29,7 +19,7 @@ async def _cleanup_old_reminders(days_old: int = 90) -> dict:
     """Async implementation of cleaning old reminders."""
     async with async_session_maker() as db:
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
 
             # Delete old sent reminders
             result = await db.execute(
@@ -59,7 +49,7 @@ async def _cleanup_old_notifications(days_old: int = 180) -> dict:
     """Async implementation of cleaning old notifications."""
     async with async_session_maker() as db:
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
 
             # Delete old read notifications
             result = await db.execute(
@@ -93,7 +83,7 @@ async def _cleanup_soft_deleted(days_old: int = 30) -> dict:
     from app.models.conversation import Conversation
     from app.models.memory import UserMemory
 
-    cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
     total_deleted = 0
 
     async with async_session_maker() as db:
@@ -115,7 +105,7 @@ async def _cleanup_soft_deleted(days_old: int = 30) -> dict:
                 )
                 deleted = result.rowcount
                 total_deleted += deleted
-                print(f"Deleted {deleted} records from {table_name}")
+                logger.info("soft_deleted_records_purged", table=table_name, count=deleted)
 
             await db.commit()
 

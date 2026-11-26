@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     PASSWORD_MIN_LENGTH: int = 8
 
     # Database
-    DATABASE_URL: str = Field(..., pattern="^postgresql(\+asyncpg)?://")
+    DATABASE_URL: str = Field(..., pattern=r"^postgresql(\+asyncpg)?://")
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
     DATABASE_POOL_TIMEOUT: int = 30

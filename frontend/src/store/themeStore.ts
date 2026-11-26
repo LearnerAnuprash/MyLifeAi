@@ -8,6 +8,7 @@ interface ThemeState {
   resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
   initializeTheme: () => void;
+  applyTheme: (theme: Theme) => void;
 }
 
 export const useThemeStore = create<ThemeState>()(
@@ -56,7 +57,7 @@ export const useThemeStore = create<ThemeState>()(
           // Listen for system theme changes
           if (state.theme === 'system') {
             const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            const handler = (e: MediaQueryListEvent) => {
+            const handler = () => {
               state.applyTheme('system');
             };
             mediaQuery.addEventListener('change', handler);
@@ -69,10 +70,5 @@ export const useThemeStore = create<ThemeState>()(
     }
   )
 );
-
-// Initialize theme on load
-if (typeof window !== 'undefined') {
-  useThemeStore.getState().initializeTheme();
-}
 
 export const useTheme = () => useThemeStore();

@@ -1,5 +1,5 @@
 """Authentication service."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
 from jose import jwt, JWTError
@@ -12,7 +12,7 @@ from app.models.settings import UserSettings
 from app.core.config import get_settings
 from app.graphql.types.inputs import RegisterInput, LoginInput
 from app.graphql.types.payloads import AuthPayload
-from app.graphql.types.user import User as GQLUser, UserSettings as GQLUserSettings
+from app.graphql.serializers import user_to_gql
 
 settings = get_settings()
 
@@ -36,13 +36,13 @@ class AuthService:
 
     def create_access_token(self, user_id: uuid.UUID) -> str:
         """Create JWT access token."""
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         to_encode = {"sub": str(user_id), "exp": expire, "type": "access"}
         return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
     def create_refresh_token(self, user_id: uuid.UUID) -> str:
         """Create JWT refresh token."""
-        expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         to_encode = {"sub": str(user_id), "exp": expire, "type": "refresh"}
         return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -107,6 +107,7 @@ class AuthService:
 
         return AuthPayload(
             token=access_token,
+            refresh_token=refresh_token,
             user=await self._user_to_gql(user),
         )
 
@@ -129,6 +130,7 @@ class AuthService:
 
         return AuthPayload(
             token=access_token,
+            refresh_token=refresh_token,
             user=await self._user_to_gql(user),
         )
 
@@ -281,39 +283,10 @@ class AuthService:
                 )
                 self.db.add(sub)
 
-    async def _user_to_gql(self, user: User) -> GQLUser:
-        """Convert User model to GraphQL type."""
-        # Load settings
-        from sqlalchemy import select
+    async def _user_to_gql(self, user: User):
+        """Load settings and delegate conversion to the central serializer."""
         result = await self.db.execute(
             select(UserSettings).where(UserSettings.user_id == user.id)
         )
         settings_obj = result.scalar_one_or_none()
-
-        gql_settings = GQLUserSettings(
-            theme=settings_obj.theme if settings_obj else "system",
-            calendar_default_view=settings_obj.calendar_default_view if settings_obj else "month",
-            week_start_day=settings_obj.week_start_day if settings_obj else 0,
-            default_reminder_minutes=settings_obj.default_reminder_minutes if settings_obj else [1440, 60, 15],
-            notification_email=settings_obj.notification_email if settings_obj else False,
-            notification_push=settings_obj.notification_push if settings_obj else False,
-            ai_provider=settings_obj.ai_provider if settings_obj else "openai",
-            ai_model=settings_obj.ai_model if settings_obj else "gpt-4o",
-            language=settings_obj.language if settings_obj else "en",
-            date_format=settings_obj.date_format if settings_obj else "YYYY-MM-DD",
-            time_format=settings_obj.time_format if settings_obj else "24h",
-        )
-
-        return GQLUser(
-            id=user.id,
-            email=user.email,
-            full_name=user.full_name,
-            avatar_url=user.avatar_url,
-            timezone=user.timezone,
-            locale=user.locale,
-            is_active=user.is_active,
-            is_verified=user.is_verified,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-            settings=gql_settings,
-        )
+        return user_to_gql(user, settings_obj)

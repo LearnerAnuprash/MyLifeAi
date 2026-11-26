@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Dropdown, Modal, Form, Input, Select, DatePicker, Radio, message } from 'antd';
+import type { FormInstance } from 'antd';
 import {
   PlusOutlined,
   LeftOutlined,
@@ -15,71 +16,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useCategoryStore } from '@/store/categoryStore';
 import clsx from 'clsx';
 import { RecurrenceEditor } from '@/components/events';
-
-const EVENTS_QUERY = `
-  query EventsByDateRange($range: CalendarRangeInput!) {
-    eventsByDateRange(range: $range) {
-      id
-      title
-      description
-      location
-      startTime
-      endTime
-      allDay
-      timezone
-      priority
-      status
-      isRecurring
-      category {
-        id
-        name
-        color
-      }
-    }
-  }
-`;
-
-const CREATE_EVENT_MUTATION = `
-  mutation CreateEvent($input: CreateEventInput!) {
-    createEvent(input: $input) {
-      id
-      title
-      startTime
-      endTime
-    }
-  }
-`;
-
-const UPDATE_EVENT_MUTATION = `
-  mutation UpdateEvent($id: UUID!, $input: UpdateEventInput!) {
-    updateEvent(id: $id, input: $input) {
-      id
-    }
-  }
-`;
-
-const DELETE_EVENT_MUTATION = `
-  mutation DeleteEvent($id: UUID!) {
-    deleteEvent(id: $id)
-  }
-`;
-
-const COMPLETE_EVENT_MUTATION = `
-  mutation CompleteEvent($id: UUID!) {
-    completeEvent(id: $id) {
-      id
-      status
-    }
-  }
-`;
-
-const DUPLICATE_EVENT_MUTATION = `
-  mutation DuplicateEvent($id: UUID!, $newStartTime: DateTime!) {
-    duplicateEvent(id: $id, newStartTime: $newStartTime) {
-      id
-    }
-  }
-`;
+import { EVENTS_BY_DATE_RANGE_QUERY, CREATE_EVENT_MUTATION, UPDATE_EVENT_MUTATION } from "@/graphql/operations";
 
 type Event = {
   id: string;
@@ -114,7 +51,7 @@ export function CalendarPage() {
     queryKey: ['events', view, currentDate],
     queryFn: async () => {
       const { start, end } = getDateRange(view, currentDate);
-      const response = await graphqlRequestWithAuth<{ eventsByDateRange: Event[] }>(EVENTS_QUERY, {
+      const response = await graphqlRequestWithAuth<{ eventsByDateRange: Event[] }>(EVENTS_BY_DATE_RANGE_QUERY, {
         range: { startDate: start.toISOString(), endDate: end.toISOString(), view: view.toUpperCase(), timezone: user?.timezone || 'UTC' },
       });
       return response.data?.eventsByDateRange || [];
@@ -163,7 +100,9 @@ export function CalendarPage() {
   const createEventMutation = useMutation<EventResponse, Error, CreateEventInput>({
     mutationFn: async (input) => {
       const response = await graphqlRequestWithAuth<{ createEvent: EventResponse }>(CREATE_EVENT_MUTATION, { input });
-      return response.data?.createEvent!;
+      const event = response.data?.createEvent;
+      if (!event) throw new Error("Failed to create event");
+      return event;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -176,7 +115,9 @@ export function CalendarPage() {
   const updateEventMutation = useMutation<EventResponse, Error, { id: string; input: UpdateEventInput }>({
     mutationFn: async ({ id, input }) => {
       const response = await graphqlRequestWithAuth<{ updateEvent: EventResponse }>(UPDATE_EVENT_MUTATION, { id, input });
-      return response.data?.updateEvent!;
+      const event = response.data?.updateEvent;
+      if (!event) throw new Error("Failed to update event");
+      return event;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -186,41 +127,8 @@ export function CalendarPage() {
     onError: (error: Error) => message.error(error.message),
   });
 
-  const deleteEventMutation = useMutation<boolean, Error, string>({
-    mutationFn: async (id) => {
-      const response = await graphqlRequestWithAuth<{ deleteEvent: boolean }>(DELETE_EVENT_MUTATION, { id });
-      return response.data?.deleteEvent!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      message.success('Event deleted');
-    },
-    onError: (error: Error) => message.error(error.message),
-  });
 
-  const completeEventMutation = useMutation<EventResponse, Error, string>({
-    mutationFn: async (id) => {
-      const response = await graphqlRequestWithAuth<{ completeEvent: EventResponse }>(COMPLETE_EVENT_MUTATION, { id });
-      return response.data?.completeEvent!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      message.success('Event marked as completed');
-    },
-    onError: (error: Error) => message.error(error.message),
-  });
 
-  const duplicateEventMutation = useMutation<EventResponse, Error, { id: string; newStartTime: string }>({
-    mutationFn: async ({ id, newStartTime }) => {
-      const response = await graphqlRequestWithAuth<{ duplicateEvent: EventResponse }>(DUPLICATE_EVENT_MUTATION, { id, newStartTime });
-      return response.data?.duplicateEvent!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      message.success('Event duplicated');
-    },
-    onError: (error: Error) => message.error(error.message),
-  });
 
   // Navigation
   const goToToday = () => setCurrentDate(new Date());
@@ -316,25 +224,6 @@ export function CalendarPage() {
     }
   };
 
-  const handleDelete = (event: Event) => {
-    Modal.confirm({
-      title: 'Delete Event',
-      content: `Are you sure you want to delete "${event.title}"?`,
-      okText: 'Delete',
-      okType: 'danger',
-      onOk: () => deleteEventMutation.mutate(event.id),
-    });
-  };
-
-  const handleComplete = (event: Event) => {
-    completeEventMutation.mutate(event.id);
-  };
-
-  const handleDuplicate = (event: Event) => {
-    const newStart = addDays(parseISO(event.startTime), 7);
-    duplicateEventMutation.mutate({ id: event.id, newStartTime: newStart.toISOString() });
-  };
-
   // Render
   const monthWeeks = getMonthWeeks(currentDate);
   const weekDays = getWeekDays(currentDate);
@@ -400,7 +289,6 @@ export function CalendarPage() {
           <WeekCalendar
             days={weekDays}
             hours={dayHours}
-            currentDate={currentDate}
             events={events}
             onSlotClick={openCreateEvent}
             onEventClick={openEditEvent}
@@ -426,8 +314,7 @@ export function CalendarPage() {
         onClose={closeEventModal}
         form={form}
         isEditing={isEditing}
-        event={selectedEvent}
-        categories={categories}
+        categories={categories as EventModalCategory[]}
         userTimezone={user?.timezone || 'UTC'}
         onSubmit={handleEventSubmit}
         submitting={createEventMutation.isPending || updateEventMutation.isPending}
@@ -585,10 +472,9 @@ function MonthCalendar({ weeks, currentDate, eventsByDay, onDayClick, onEventCli
   );
 }
 
-function WeekCalendar({ days, hours, currentDate, events, onSlotClick, onEventClick, isLoading }: {
+function WeekCalendar({ days, hours, events, onSlotClick, onEventClick, isLoading }: {
   days: Date[];
   hours: Date[];
-  currentDate: Date;
   events: Event[];
   onSlotClick: (date: Date) => void;
   onEventClick: (event: Event) => void;
@@ -738,7 +624,6 @@ function WeekEventChip({ event, hour, onClick }: { event: Event; hour: Date; onC
   const start = parseISO(event.startTime);
   const end = parseISO(event.endTime);
   const hourStart = hour.getHours();
-  const hourEnd = hourStart + 1;
 
   const top = Math.max(0, (start.getHours() - hourStart) * 60 + start.getMinutes()) * (60 / 60);
   const height = Math.min(60, (end.getHours() - hourStart) * 60 + end.getMinutes() - ((start.getHours() - hourStart) * 60 + start.getMinutes()));
@@ -762,7 +647,24 @@ function WeekEventChip({ event, hour, onClick }: { event: Event; hour: Date; onC
 }
 
 // Event Modal
-function EventModal({ open, onClose, form, isEditing, event, categories, userTimezone, onSubmit, submitting }) {
+type EventModalCategory = {
+  id: string;
+  name: string;
+  children: Array<{ id: string; name: string }>;
+};
+
+type EventModalProps = {
+  open: boolean;
+  onClose: () => void;
+  form: FormInstance;
+  isEditing: boolean;
+  categories: EventModalCategory[];
+  userTimezone: string;
+  onSubmit: (values: Record<string, unknown>) => void;
+  submitting: boolean;
+};
+
+function EventModal({ open, onClose, form, isEditing, categories, userTimezone, onSubmit, submitting }: EventModalProps) {
   return (
     <Modal
       open={open}

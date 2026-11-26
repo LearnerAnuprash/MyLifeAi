@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     String, Text, Boolean, Integer, DateTime, ForeignKey,
-    func, Index, ARRAY, Enum as SQLEnum
+    func, Index, ARRAY, Enum as SQLEnum, text
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -14,23 +14,23 @@ import enum
 
 class EventStatus(str, enum.Enum):
     """Event status enumeration."""
-    SCHEDULED = "scheduled"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+    SCHEDULED = "SCHEDULED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class EventPriority(str, enum.Enum):
     """Event priority enumeration."""
-    NORMAL = "normal"
-    HIGH = "high"
-    CRITICAL = "critical"
+    NORMAL = "NORMAL"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
 
 
 class NotificationType(str, enum.Enum):
     """Notification type enumeration."""
-    IN_APP = "in_app"
-    EMAIL = "email"
-    PUSH = "push"
+    IN_APP = "IN_APP"
+    EMAIL = "EMAIL"
+    PUSH = "PUSH"
 
 
 class Event(Base):
@@ -107,7 +107,7 @@ class Event(Base):
     recurrence_exceptions: Mapped[List[datetime]] = mapped_column(
         ARRAY(DateTime(timezone=True)),
         nullable=False,
-        default=list,
+        server_default=text("'{}'::timestamptz[]"),
     )
     preparation_notes: Mapped[Optional[str]] = mapped_column(
         Text,

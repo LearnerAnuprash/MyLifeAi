@@ -5,6 +5,9 @@ import { z } from 'zod';
 import { Button, Card, Alert, Tabs, message } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { graphqlRequest } from '@/utils/graphqlClient';
+import type { AuthPayload } from '@/types/graphql';
+import { REGISTER_MUTATION } from '@/graphql/operations';
 import { AppInput, AppPasswordInput, AppConfirmPasswordInput } from '@/components/ui';
 
 const registerSchema = z.object({
@@ -36,58 +39,25 @@ export function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const { confirmPassword, ...input } = values;
-      const response = await fetch(import.meta.env.VITE_API_URL || 'http://localhost:8000/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `
-            mutation Register($input: RegisterInput!) {
-              register(input: $input) {
-                token
-                user {
-                  id
-                  email
-                  fullName
-                  avatarUrl
-                  timezone
-                  locale
-                  isActive
-                  isVerified
-                  createdAt
-                  updatedAt
-                  settings {
-                    theme
-                    calendarDefaultView
-                    weekStartDay
-                    defaultReminderMinutes
-                    notificationEmail
-                    notificationPush
-                    aiProvider
-                    aiModel
-                    language
-                    dateFormat
-                    timeFormat
-                  }
-                }
-              }
-            }
-          `,
-          variables: { input },
-        }),
-      });
+      const { confirmPassword: _confirmPassword, ...input } = values;
+      const response = await graphqlRequest<{ register: AuthPayload }>(
+        REGISTER_MUTATION,
+        { input },
+      );
 
-      const result = await response.json();
-
-      if (result.errors) {
-        throw new Error(result.errors[0].message);
+      if (response.errors?.length) {
+        throw new Error(response.errors[0].message);
       }
 
-      setAuth(result.data.register);
-      message.success('Account created successfully!');
-      navigate('/');
+      if (!response.data?.register) {
+        throw new Error("Registration failed");
+      }
+
+      setAuth(response.data.register);
+      message.success("Account created successfully!");
+      navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setIsLoading(false);
     }
@@ -178,7 +148,6 @@ export function RegisterPage() {
             />
 
             <Button
-              type="submit"
               htmlType="submit"
               className="w-full h-11 text-lg"
               loading={isLoading}

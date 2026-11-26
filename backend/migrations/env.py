@@ -13,11 +13,15 @@ from alembic import context
 # Add the app directory to Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.core.config import get_settings
 from app.db.session import Base
 from app.models import *  # noqa: F403,F401 - Import all models for metadata
 
 # this is the Alembic Config object
 config = context.config
+
+# Prefer the application's configured database URL over the static ini value.
+config.set_main_option("sqlalchemy.url", get_settings().DATABASE_URL)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

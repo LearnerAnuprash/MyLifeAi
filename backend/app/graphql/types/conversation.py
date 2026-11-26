@@ -16,7 +16,7 @@ class Message:
     content: str
     tool_calls: Optional[JSON]
     tool_call_id: Optional[str]
-    metadata: Optional[JSON]
+    message_metadata: Optional[JSON]
     created_at: DateTime
 
 

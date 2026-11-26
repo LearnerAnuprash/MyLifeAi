@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, List, Avatar, Badge, Dropdown, Menu, Space, Typography, Empty, Spin } from 'antd';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Button, List, Avatar, Badge, Dropdown, Space, Typography, Empty } from 'antd';
 import {
   BellOutlined,
   CheckOutlined,
@@ -8,72 +8,13 @@ import {
   ReadOutlined,
   MoreOutlined,
 } from '@ant-design/icons';
-import { graphqlRequestWithAuth } from '@/utils/graphqlClient';
-import { useAuthStore } from '@/store/authStore';
 import { useNotificationStore } from '@/store/notificationStore';
 import { formatRelativeTime } from '@/utils/dateUtils';
 import clsx from 'clsx';
 
 const { Text } = Typography;
 
-const NOTIFICATIONS_QUERY = `
-  query Notifications($first: Int, $filter: NotificationFilterInput) {
-    notifications(first: $first, filter: $filter) {
-      edges {
-        node {
-          id
-          type
-          title
-          body
-          referenceId
-          referenceType
-          isRead
-          readAt
-          createdAt
-        }
-      }
-      unreadCount
-      totalCount
-    }
-  }
-`;
-
-const MARK_READ_MUTATION = `
-  mutation MarkNotificationRead($id: UUID!) {
-    markNotificationRead(id: $id) {
-      id
-      isRead
-      readAt
-    }
-  }
-`;
-
-const MARK_ALL_READ_MUTATION = `
-  mutation MarkAllNotificationsRead {
-    markAllNotificationsRead
-  }
-`;
-
-const DELETE_NOTIFICATION_MUTATION = `
-  mutation DeleteNotification($id: UUID!) {
-    deleteNotification(id: $id)
-  }
-`;
-
-type Notification = {
-  id: string;
-  type: string;
-  title: string;
-  body?: string;
-  referenceId?: string;
-  referenceType?: string;
-  isRead: boolean;
-  readAt?: string;
-  createdAt: string;
-};
-
 export function NotificationsPage() {
-  const { user } = useAuthStore();
   const { notifications, unreadCount, fetchNotifications, markRead, markAllRead, deleteNotification } = useNotificationStore();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -243,5 +184,3 @@ export function NotificationsPage() {
     </div>
   );
 }
-
-import { useState } from 'react';

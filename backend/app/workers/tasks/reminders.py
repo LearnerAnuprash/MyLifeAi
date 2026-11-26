@@ -1,25 +1,15 @@
 """Reminder Celery tasks."""
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import datetime, timezone
 import uuid
-import asyncio
 from celery import shared_task
-from sqlalchemy import select, and_, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_maker
+from app.workers.utils import logger, run_async
 from app.models.event import Event, EventReminder
-from app.models.notification import Notification, NotificationCategory
+from app.models.notification import NotificationCategory
 from app.services.notification import NotificationService
-
-
-def run_async(coro):
-    """Run async function in new event loop."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -35,15 +25,13 @@ async def _check_due_reminders() -> dict:
 
     async with async_session_maker() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Find unsent reminders that are due
             # Reminder triggers at: event.start_time - minutes_before
             # So we need: now >= event.start_time - minutes_before
             # Which is: event.start_time <= now + minutes_before
             # Using raw SQL to calculate the interval
-            from sqlalchemy import text
-
             result = await db.execute(
                 select(EventReminder)
                 .join(Event, EventReminder.event_id == Event.id)
@@ -56,10 +44,14 @@ async def _check_due_reminders() -> dict:
             )
             reminders = result.scalars().all()
 
-            print(f"[_check_due_reminders] Found {len(reminders)} due reminders at {now}")
+            logger.info("found_due_reminders", count=len(reminders), now=now.isoformat())
 
             for reminder in reminders:
-                print(f"[_check_due_reminders] Processing reminder {reminder.id} for event {reminder.event_id}")
+                logger.info(
+                    "processing_reminder",
+                    reminder_id=str(reminder.id),
+                    event_id=str(reminder.event_id),
+                )
                 try:
                     # Send reminder notification
                     await _send_reminder_notification(db, reminder)
@@ -69,11 +61,11 @@ async def _check_due_reminders() -> dict:
                     reminder.sent_at = now
 
                     sent_count += 1
-                    print(f"[_check_due_reminders] Sent reminder {reminder.id}")
+                    logger.info("sent_reminder", reminder_id=str(reminder.id))
                 except Exception as e:
                     error_count += 1
                     # Log error but continue with other reminders
-                    print(f"Error sending reminder {reminder.id}: {e}")
+                    logger.error("send_reminder_failed", reminder_id=str(reminder.id), error=str(e))
 
             await db.commit()
 
@@ -122,7 +114,7 @@ async def _send_reminder_notification(db: AsyncSession, reminder: EventReminder)
 @shared_task(bind=True, max_retries=3)
 def send_event_reminder(self, reminder_id: str) -> dict:
     """Send a specific reminder (for testing/manual triggering)."""
-    return asyncio.run(_send_event_reminder(reminder_id))
+    return run_async(_send_event_reminder(reminder_id))
 
 
 async def _send_event_reminder(reminder_id: str) -> dict:
@@ -143,7 +135,7 @@ async def _send_event_reminder(reminder_id: str) -> dict:
             await _send_reminder_notification(db, reminder)
 
             reminder.is_sent = True
-            reminder.sent_at = datetime.utcnow()
+            reminder.sent_at = datetime.now(timezone.utc)
 
             await db.commit()
 
@@ -157,7 +149,7 @@ async def _send_event_reminder(reminder_id: str) -> dict:
 @shared_task
 def schedule_event_reminders(event_id: str) -> dict:
     """Schedule reminders for a new/updated event."""
-    return asyncio.run(_schedule_event_reminders(event_id))
+    return run_async(_schedule_event_reminders(event_id))
 
 
 async def _schedule_event_reminders(event_id: str) -> dict:
@@ -184,7 +176,3 @@ async def _schedule_event_reminders(event_id: str) -> dict:
 
         except Exception as e:
             return {"error": str(e)}
-
-
-# Import asyncio at the top
-import asyncio

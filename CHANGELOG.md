@@ -80,14 +80,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Initial Alembic migration (`backend/migrations/versions/001_initial_schema.py`)
+  and startup migration step in Docker Compose
+- Backend integration tests for auth, event CRUD, category tree, notification
+  unread count, and recurring exceptions
+- ADRs under `docs/decisions/`
+- ESLint configuration for the frontend
+- Central GraphQL operations file (`frontend/src/graphql/operations.ts`)
+
+### Changed
+- Domain logic moved from models to services; model-to-GraphQL conversion
+  centralized in `graphql/serializers.py`
+- `recurrence_exceptions` changed from event IDs to occurrence timestamps
+  (`TIMESTAMPTZ[]` / `[DateTime!]!`)
+- Refresh tokens returned in `AuthPayload` and sent via `X-Refresh-Token`
+- Frontend uses npm only; stale generated GraphQL directory removed; codegen
+  outputs one ignored file
+- Docker Compose runs `alembic upgrade head` before the backend
+
+### Fixed
+- Timezone-aware datetimes replace `datetime.utcnow()`
+- Strawberry input updates no longer call Pydantic `model_dump()`
+- Frontend TypeScript errors, invalid AntD icon imports, dead code, and
+  enum/string mismatches
+- Celery worker event-loop handling and duplicate migration configuration
+
 ### Planned
-- Alembic database migrations
-- GraphQL Codegen TypeScript types
 - Recurring event RRULE editor UI
 - Category management UI in settings
 - Celery reminder scheduling tasks
 - AI planner tool execution backend
 - WebSocket real-time subscriptions
-- Automated test suite
-- Production Docker configuration
-- Deployment documentation
+- Production Docker configuration and deployment documentation

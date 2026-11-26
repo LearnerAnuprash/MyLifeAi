@@ -22,6 +22,16 @@ def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
 
+    # Create enum types with uppercase values
+    op.execute("CREATE TYPE theme AS ENUM ('LIGHT', 'DARK', 'SYSTEM')")
+    op.execute("CREATE TYPE calendarview AS ENUM ('MONTH', 'WEEK', 'DAY', 'YEAR', 'UPCOMING', 'PAST')")
+    op.execute("CREATE TYPE eventpriority AS ENUM ('NORMAL', 'HIGH', 'CRITICAL')")
+    op.execute("CREATE TYPE eventstatus AS ENUM ('SCHEDULED', 'COMPLETED', 'CANCELLED')")
+    op.execute("CREATE TYPE notificationtype AS ENUM ('IN_APP', 'EMAIL', 'PUSH')")
+    op.execute("CREATE TYPE conversationrole AS ENUM ('USER', 'ASSISTANT', 'SYSTEM', 'TOOL')")
+    op.execute("CREATE TYPE memorytype AS ENUM ('GOAL', 'PREFERENCE', 'COMMITMENT', 'FACT', 'SUMMARY')")
+    op.execute("CREATE TYPE notificationcategory AS ENUM ('REMINDER', 'EVENT_CREATED', 'EVENT_UPDATED', 'EVENT_DELETED', 'AI_SUGGESTION', 'SYSTEM')")
+
     # Users table
     op.create_table(
         'users',
@@ -79,12 +89,12 @@ def upgrade() -> None:
         sa.Column('end_time', sa.DateTime(timezone=True), nullable=False),
         sa.Column('all_day', sa.Boolean(), server_default='false', nullable=False),
         sa.Column('timezone', sa.String(50), server_default='UTC', nullable=False),
-        sa.Column('priority', sa.Enum('normal', 'high', 'critical', name='eventpriority'), server_default='normal', nullable=False),
-        sa.Column('status', sa.Enum('scheduled', 'completed', 'cancelled', name='eventstatus'), server_default='scheduled', nullable=False),
+        sa.Column('priority', sa.Enum('NORMAL', 'HIGH', 'CRITICAL', name='eventpriority', create_type=False), server_default='NORMAL', nullable=False),
+        sa.Column('status', sa.Enum('SCHEDULED', 'COMPLETED', 'CANCELLED', name='eventstatus', create_type=False), server_default='SCHEDULED', nullable=False),
         sa.Column('is_recurring', sa.Boolean(), server_default='false', nullable=False),
         sa.Column('rrule', sa.Text(), nullable=True),
         sa.Column('rrule_original_start', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('recurrence_exceptions', postgresql.ARRAY(postgresql.UUID(as_uuid=True)), server_default='ARRAY[]::uuid[]', nullable=False),
+        sa.Column('recurrence_exceptions', postgresql.ARRAY(sa.DateTime(timezone=True)), server_default=sa.text("'{}'::timestamptz[]"), nullable=False),
         sa.Column('preparation_notes', sa.Text(), nullable=True),
         sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -108,7 +118,7 @@ def upgrade() -> None:
         sa.Column('event_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('minutes_before', sa.Integer(), nullable=False),
-        sa.Column('notification_type', sa.Enum('in_app', 'email', 'push', name='notificationtype'), server_default='in_app', nullable=False),
+        sa.Column('notification_type', sa.Enum('IN_APP', 'EMAIL', 'PUSH', name='notificationtype', create_type=False), server_default='IN_APP', nullable=False),
         sa.Column('is_sent', sa.Boolean(), server_default='false', nullable=False),
         sa.Column('sent_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -142,7 +152,7 @@ def upgrade() -> None:
         'messages',
         sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('conversation_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('role', sa.Enum('user', 'assistant', 'system', 'tool', name='conversationrole'), nullable=False),
+        sa.Column('role', sa.Enum('USER', 'ASSISTANT', 'SYSTEM', 'TOOL', name='conversationrole', create_type=False), nullable=False),
         sa.Column('content', sa.Text(), nullable=False),
         sa.Column('tool_calls', postgresql.JSONB(), nullable=True),
         sa.Column('tool_call_id', sa.String(100), nullable=True),
@@ -159,7 +169,7 @@ def upgrade() -> None:
         'user_memory',
         sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('memory_type', sa.Enum('goal', 'preference', 'commitment', 'fact', 'summary', name='memorytype'), nullable=False),
+        sa.Column('memory_type', sa.Enum('GOAL', 'PREFERENCE', 'COMMITMENT', 'FACT', 'SUMMARY', name='memorytype', create_type=False), nullable=False),
         sa.Column('title', sa.String(255), nullable=False),
         sa.Column('content', sa.Text(), nullable=False),
         sa.Column('embedding', sa.ARRAY(sa.Float()), nullable=True),
@@ -182,7 +192,7 @@ def upgrade() -> None:
         'notifications',
         sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('type', sa.Enum('reminder', 'event_created', 'event_updated', 'event_deleted', 'ai_suggestion', 'system', name='notificationcategory'), nullable=False),
+        sa.Column('type', sa.Enum('REMINDER', 'EVENT_CREATED', 'EVENT_UPDATED', 'EVENT_DELETED', 'AI_SUGGESTION', 'SYSTEM', name='notificationcategory', create_type=False), nullable=False),
         sa.Column('title', sa.String(255), nullable=False),
         sa.Column('body', sa.Text(), nullable=True),
         sa.Column('reference_id', postgresql.UUID(as_uuid=True), nullable=True),
@@ -201,8 +211,8 @@ def upgrade() -> None:
     op.create_table(
         'user_settings',
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('theme', sa.Enum('light', 'dark', 'system', name='theme'), server_default='system', nullable=False),
-        sa.Column('calendar_default_view', sa.Enum('month', 'week', 'day', 'year', 'upcoming', 'past', name='calendarview'), server_default='month', nullable=False),
+        sa.Column('theme', sa.Enum('LIGHT', 'DARK', 'SYSTEM', name='theme', create_type=False), server_default='SYSTEM', nullable=False),
+        sa.Column('calendar_default_view', sa.Enum('MONTH', 'WEEK', 'DAY', 'YEAR', 'UPCOMING', 'PAST', name='calendarview', create_type=False), server_default='MONTH', nullable=False),
         sa.Column('week_start_day', sa.Integer(), server_default='0', nullable=False),
         sa.Column('default_reminder_minutes', postgresql.ARRAY(sa.Integer()), server_default='{1440,60,15}', nullable=False),
         sa.Column('notification_email', sa.Boolean(), server_default='false', nullable=False),
@@ -267,6 +277,13 @@ def downgrade() -> None:
 
     # Drop enums
     op.execute('DROP TYPE IF EXISTS eventpriority')
+    op.execute('DROP TYPE IF EXISTS eventstatus')
+    op.execute('DROP TYPE IF EXISTS notificationtype')
+    op.execute('DROP TYPE IF EXISTS conversationrole')
+    op.execute('DROP TYPE IF EXISTS memorytype')
+    op.execute('DROP TYPE IF EXISTS notificationcategory')
+    op.execute('DROP TYPE IF EXISTS theme')
+    op.execute('DROP TYPE IF EXISTS calendarview')
     op.execute('DROP TYPE IF EXISTS eventstatus')
     op.execute('DROP TYPE IF EXISTS notificationtype')
     op.execute('DROP TYPE IF EXISTS conversationrole')

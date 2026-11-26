@@ -1,14 +1,16 @@
 """Category service."""
+from dataclasses import fields
 from typing import List, Optional
 import uuid
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.category import Category
-from app.models.user import User
 from app.graphql.types.inputs import CreateCategoryInput, UpdateCategoryInput
 from app.graphql.types.category import Category as GQLCategory, CategoryTree
+from app.graphql.serializers import category_to_gql
 
 
 class CategoryService:
@@ -40,8 +42,8 @@ class CategoryService:
                 # Children are already loaded via selectinload
 
         # Convert to GraphQL types
-        gql_categories = [await self._category_to_gql(cat) for cat in categories]
-        gql_roots = [await self._category_to_gql(cat) for cat in roots]
+        gql_categories = [category_to_gql(cat) for cat in categories]
+        gql_roots = [category_to_gql(cat) for cat in roots]
 
         return CategoryTree(
             categories=gql_roots,
@@ -64,7 +66,7 @@ class CategoryService:
         if not category:
             return None
 
-        return await self._category_to_gql(category)
+        return category_to_gql(category)
 
     async def create_category(self, user_id: uuid.UUID, input: CreateCategoryInput) -> GQLCategory:
         """Create a new category."""
@@ -109,7 +111,7 @@ class CategoryService:
         await self.db.commit()
         await self.db.refresh(category)
 
-        return await self._category_to_gql(category)
+        return category_to_gql(category)
 
     async def update_category(
         self,
@@ -136,14 +138,18 @@ class CategoryService:
             raise ValueError("Cannot modify system categories")
 
         # Update fields
-        update_data = input.model_dump(exclude_unset=True)
+        update_data = {
+            field.name: getattr(input, field.name)
+            for field in fields(input)
+            if getattr(input, field.name) is not None
+        }
         for field, value in update_data.items():
             setattr(category, field, value)
 
         await self.db.commit()
         await self.db.refresh(category)
 
-        return await self._category_to_gql(category)
+        return category_to_gql(category)
 
     async def delete_category(self, user_id: uuid.UUID, category_id: uuid.UUID) -> bool:
         """Delete a category (soft delete)."""
@@ -164,8 +170,7 @@ class CategoryService:
             raise ValueError("Cannot delete system categories")
 
         # Soft delete
-        from datetime import datetime
-        category.deleted_at = datetime.utcnow()
+        category.deleted_at = datetime.now(timezone.utc)
 
         # Also soft delete children
         await self._soft_delete_children(category_id)
@@ -181,7 +186,7 @@ class CategoryService:
         children = result.scalars().all()
 
         for child in children:
-            child.deleted_at = func.now()
+            child.deleted_at = datetime.now(timezone.utc)
             await self._soft_delete_children(child.id)
 
     async def reorder_categories(self, user_id: uuid.UUID, category_ids: List[uuid.UUID]) -> List[GQLCategory]:
@@ -209,30 +214,6 @@ class CategoryService:
         gql_categories = []
         for cat_id in category_ids:
             await self.db.refresh(categories[cat_id])
-            gql_categories.append(await self._category_to_gql(categories[cat_id]))
+            gql_categories.append(category_to_gql(categories[cat_id]))
 
         return gql_categories
-
-    async def _category_to_gql(self, category: Category) -> GQLCategory:
-        """Convert Category model to GraphQL type."""
-        children = []
-        if category.children:
-            for child in category.children:
-                if child.deleted_at is None:
-                    children.append(await self._category_to_gql(child))
-
-        return GQLCategory(
-            id=category.id,
-            user_id=category.user_id,
-            parent_id=category.parent_id,
-            name=category.name,
-            description=category.description,
-            color=category.color,
-            icon=category.icon,
-            is_system=category.is_system,
-            sort_order=category.sort_order,
-            default_reminder_minutes=category.default_reminder_minutes,
-            children=children,
-            created_at=category.created_at,
-            updated_at=category.updated_at,
-        )

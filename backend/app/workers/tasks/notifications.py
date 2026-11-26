@@ -1,27 +1,16 @@
 """Notification Celery tasks."""
-from datetime import datetime, timedelta
-from typing import List
+from datetime import datetime, timedelta, timezone
 import uuid
-import asyncio
 from celery import shared_task
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import async_session_maker
+from app.workers.utils import logger, run_async
 from app.models.event import Event, EventStatus
 from app.models.notification import Notification, NotificationCategory
 from app.models.user import User
 from app.models.settings import UserSettings
 from app.services.notification import NotificationService
-
-
-def run_async(coro):
-    """Run async function in new event loop."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=300)
@@ -37,7 +26,7 @@ async def _send_daily_summary() -> dict:
 
     async with async_session_maker() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             tomorrow = now + timedelta(days=1)
             week_from_now = now + timedelta(days=7)
 
@@ -128,7 +117,7 @@ async def _send_daily_summary() -> dict:
 
                 except Exception as e:
                     error_count += 1
-                    print(f"Error sending summary to user {user.id}: {e}")
+                    logger.error("daily_summary_failed", user_id=str(user.id), error=str(e))
 
             await db.commit()
 
@@ -188,7 +177,7 @@ async def _send_weekly_summary() -> dict:
 
     async with async_session_maker() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             week_start = now - timedelta(days=now.weekday())
             week_end = week_start + timedelta(days=7)
 
@@ -270,7 +259,7 @@ async def _send_weekly_summary() -> dict:
 
                 except Exception as e:
                     error_count += 1
-                    print(f"Error sending weekly summary to user {user.id}: {e}")
+                    logger.error("weekly_summary_failed", user_id=str(user.id), error=str(e))
 
             await db.commit()
 
@@ -279,6 +268,3 @@ async def _send_weekly_summary() -> dict:
             raise
 
     return {"sent": sent_count, "errors": error_count}
-
-
-import asyncio

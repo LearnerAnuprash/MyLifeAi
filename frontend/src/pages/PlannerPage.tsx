@@ -1,69 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Input, List, Avatar, Spin, Flex, Space, Typography, Card, Divider } from 'antd';
-import { SendOutlined, RobotOutlined, LoadingOutlined, CopyOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Button, Input, Avatar, Spin, Flex, Typography, Card } from 'antd';
+import { SendOutlined, RobotOutlined, DeleteOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import { graphqlRequestWithAuth } from '@/utils/graphqlClient';
 import { useAuthStore } from '@/store/authStore';
 import clsx from 'clsx';
+import { CONVERSATIONS_QUERY, CREATE_CONVERSATION_MUTATION, SEND_MESSAGE_MUTATION, DELETE_CONVERSATION_MUTATION } from "@/graphql/operations";
 
-const { Text, Paragraph } = Typography;
-
-const CONVERSATIONS_QUERY = `
-  query Conversations($first: Int) {
-    conversations(first: $first) {
-      edges {
-        node {
-          id
-          title
-          modelProvider
-          modelName
-          createdAt
-          updatedAt
-          messages {
-            id
-            role
-            content
-            createdAt
-          }
-        }
-      }
-    }
-  }
-`;
-
-const CREATE_CONVERSATION_MUTATION = `
-  mutation CreateConversation($input: CreateConversationInput!) {
-    createConversation(input: $input) {
-      id
-      title
-    }
-  }
-`;
-
-const SEND_MESSAGE_MUTATION = `
-  mutation SendMessage($input: SendMessageInput!) {
-    sendMessage(input: $input) {
-      userMessage {
-        id
-        role
-        content
-        createdAt
-      }
-      assistantMessage {
-        id
-        role
-        content
-        createdAt
-      }
-    }
-  }
-`;
-
-const DELETE_CONVERSATION_MUTATION = `
-  mutation DeleteConversation($id: UUID!) {
-    deleteConversation(id: $id)
-  }
-`;
+const { Paragraph } = Typography;
 
 type Message = {
   id: string;
@@ -84,7 +28,6 @@ type Conversation = {
 
 export function PlannerPage() {
   const { user } = useAuthStore();
-  const queryClient = useQueryClient();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [newConversationTitle, setNewConversationTitle] = useState('');
@@ -95,7 +38,7 @@ export function PlannerPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch conversations
-  const { data: conversationsData, isLoading, refetch } = useQuery({
+  const { data: conversationsData, isLoading } = useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
       const response = await graphqlRequestWithAuth<{ conversations: { edges: Array<{ node: Conversation }> } }>(
@@ -114,7 +57,7 @@ export function PlannerPage() {
         setActiveConversationId(conversationsData[0].id);
       }
     }
-  }, [conversationsData]);
+  }, [conversationsData, activeConversationId]);
 
   // Scroll to bottom when messages change
   const activeConversation = conversations.find(c => c.id === activeConversationId);
@@ -136,6 +79,7 @@ export function PlannerPage() {
       return response.data?.createConversation;
     },
     onSuccess: (newConv) => {
+      if (!newConv) return;
       setConversations(prev => [newConv, ...prev]);
       setActiveConversationId(newConv.id);
       setShowNewConversation(false);
@@ -327,8 +271,8 @@ export function PlannerPage() {
                 className="flex-1 overflow-y-auto p-6 space-y-6"
                 style={{ scrollBehavior: 'smooth' }}
               >
-                {activeConversation.messages.map((message, index) => (
-                  <MessageBubble key={message.id} message={message} index={index} />
+                {activeConversation.messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
                 ))}
 
                 {isSending && (
@@ -403,9 +347,8 @@ export function PlannerPage() {
   );
 }
 
-function MessageBubble({ message, index }: { message: any; index: number }) {
+function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'USER';
-  const isAssistant = message.role === 'ASSISTANT';
 
   return (
     <div className={clsx('flex gap-3 animate-in', isUser && 'justify-end')}>
@@ -450,6 +393,3 @@ function formatRelativeTime(dateStr: string): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
 }
-
-import { UserOutlined } from '@ant-design/icons';
-import { PlusOutlined } from '@ant-design/icons';

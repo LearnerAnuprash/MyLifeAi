@@ -150,7 +150,7 @@ type Event {
   isRecurring: Boolean!
   rrule: String
   rruleOriginalStart: DateTime
-  recurrenceExceptions: [UUID!]!
+  recurrenceExceptions: [DateTime!]!
   preparationNotes: String
   completedAt: DateTime
   createdAt: DateTime!
@@ -279,6 +279,7 @@ input LoginInput {
 
 type AuthPayload {
   token: String!
+  refreshToken: String!
   user: User!
 }
 ```
@@ -489,6 +490,12 @@ input NotificationFilterInput {
   types: [NotificationCategory!]
 }
 ```
+
+## Authentication transport
+
+The client sends `Authorization: Bearer <accessToken>` for authenticated
+requests and `X-Refresh-Token: <refreshToken>` when calling the `refreshToken`
+mutation. Login and register return both tokens in `AuthPayload`.
 
 ## Mutations
 

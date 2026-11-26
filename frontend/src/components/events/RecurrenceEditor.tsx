@@ -104,10 +104,11 @@ function parseRrule(rruleStr: string): Partial<RecurrenceRule> {
       case "INTERVAL":
         rule.interval = parseInt(value, 10);
         break;
-      case "BYDAY":
+      case "BYDAY": {
         const dayNames = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
         rule.byWeekday = value.split(",").map(d => dayNames.indexOf(d)).filter(i => i >= 0);
         break;
+      }
       case "BYMONTHDAY":
         rule.byMonthDay = value.split(",").map(v => parseInt(v, 10));
         break;

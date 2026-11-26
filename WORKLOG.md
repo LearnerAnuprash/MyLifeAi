@@ -1,6 +1,46 @@
 # WORKLOG.md - My Life AI Development Log
 
-## 2026-11-24 - Project Initialization & Phase 0/1 Implementation
+## 2026-11-26 - Full Integration Testing & Event Service Fixes
+
+### Completed
+
+#### Backend Event Service Fixes
+- Fixed greenlet_spawn issues in EventService by:
+  - Eagerly loading category children in all queries (`selectinload(Event.category).selectinload(Category.children)`)
+  - Using plain dict data for serialization instead of SQLAlchemy objects to avoid lazy loading
+  - Added `category_from_dict` and `reminder_to_gql_from_dict` serializers
+  - Modified `_expand_recurring_event` to create instances without SQLAlchemy relationships
+  - Updated `get_events_by_date_range` to build category/reminder data before expanding recurring events
+
+#### All GraphQL Operations Verified Working
+- Auth: register, login, me ✓
+- Categories: CRUD, tree ✓
+- Events: CRUD, recurring, bulk operations, calendar queries (today/week/month/date-range) ✓
+- Recurring events: create, expand, exceptions ✓
+- Conversations: CRUD, messages ✓
+- AI Planner: send_message with tool calling (mock provider) ✓
+- Notifications: CRUD, unread count ✓
+- Settings: update ✓
+
+#### Infrastructure
+- Docker Compose builds and runs successfully
+- All services (postgres, redis, backend, celery-worker, celery-beat, frontend) healthy
+- Database migrations applied via Alembic on startup
+- Celery beat schedules running (check_due_reminders every minute, daily summary, cleanup tasks)
+
+### Verification Evidence
+- Backend health endpoint: `{"status":"healthy","app":"My Life AI","version":"0.1.0","environment":"development"}`
+- GraphQL operations tested via curl:
+  - User registration and authentication
+  - Category creation
+  - Event creation (recurring and non-recurring with reminders)
+  - Events query (paginated, with category and reminders)
+  - Events by date range (expands recurring events)
+  - Today/this week/this month events
+  - Conversation creation and AI message exchange
+  - User settings query
+
+## 2026-11-25 - Refactor Consolidation (Phases 1-5)
 
 ### Completed
 

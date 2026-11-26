@@ -1,13 +1,13 @@
 """FastAPI application entry point."""
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from strawberry.fastapi import GraphQLRouter
 import structlog
 
 from app.core.config import get_settings
-from app.db.session import init_db, close_db, get_db
+from app.db.session import close_db, init_db
 from app.graphql.schema import schema
 from app.graphql.context import get_context
 
@@ -38,18 +38,12 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    # Use environment variable to ensure init_db runs only once per container
-    import os
-    if os.getenv("MYLIFE_DB_INITIALIZED") != "1":
-        os.environ["MYLIFE_DB_INITIALIZED"] = "1"
-        logger.info("Starting application", environment=settings.ENVIRONMENT)
-        try:
-            # Run init_db in a way that ensures tables are created
-            await init_db()
-        except Exception as e:
-            # Log but don't fail if tables already exist
-            logger.warning("Database initialization warning (tables may already exist)", error=str(e))
-        logger.info("Database initialized")
+    logger.info("Starting application", environment=settings.ENVIRONMENT)
+    # Development bootstrap only; production uses `alembic upgrade head`.
+    try:
+        await init_db()
+    except Exception as exc:
+        logger.warning("Database bootstrap skipped", error=str(exc))
 
     yield
 
@@ -74,10 +68,10 @@ def create_app() -> FastAPI:
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=settings.cors_origins_list,
         allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-        allow_methods=settings.CORS_ALLOW_METHODS,
-        allow_headers=settings.CORS_ALLOW_HEADERS,
+        allow_methods=settings.cors_allow_methods_list,
+        allow_headers=settings.cors_allow_headers_list,
     )
 
     # GraphQL router

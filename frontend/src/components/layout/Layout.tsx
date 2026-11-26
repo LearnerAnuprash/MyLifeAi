@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Layout as AntLayout, Avatar, Dropdown, Button } from 'antd';
 import {
@@ -36,7 +36,6 @@ type UserMenuItem = {
 };
 
 export function Layout() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { setTheme } = useThemeStore();
   const { user, logout } = useAuthStore();
@@ -79,7 +78,7 @@ export function Layout() {
       icon: SunOutlined,
       onClick: () => handleThemeChange('system'),
     },
-    { type: 'divider' as const },
+    { key: 'divider', label: '', type: 'divider' as const },
     {
       key: 'logout',
       label: 'Logout',

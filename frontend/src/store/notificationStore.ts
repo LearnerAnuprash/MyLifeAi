@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { graphqlRequestWithAuth } from '@/utils/graphqlClient';
+import { NOTIFICATIONS_QUERY, MARK_NOTIFICATION_READ_MUTATION, MARK_ALL_NOTIFICATIONS_READ_MUTATION, DELETE_NOTIFICATION_MUTATION } from "@/graphql/operations";
 
 interface Notification {
   id: string;
@@ -25,50 +26,7 @@ interface NotificationState {
   addNotification: (notification: Notification) => void;
 }
 
-const NOTIFICATIONS_QUERY = `
-  query Notifications($first: Int) {
-    notifications(first: $first) {
-      edges {
-        node {
-          id
-          type
-          title
-          body
-          referenceId
-          referenceType
-          isRead
-          readAt
-          createdAt
-        }
-      }
-      unreadCount
-    }
-  }
-`;
-
-const MARK_READ_MUTATION = `
-  mutation MarkNotificationRead($id: UUID!) {
-    markNotificationRead(id: $id) {
-      id
-      isRead
-      readAt
-    }
-  }
-`;
-
-const MARK_ALL_READ_MUTATION = `
-  mutation MarkAllNotificationsRead {
-    markAllNotificationsRead
-  }
-`;
-
-const DELETE_NOTIFICATION_MUTATION = `
-  mutation DeleteNotification($id: UUID!) {
-    deleteNotification(id: $id)
-  }
-`;
-
-export const useNotificationStore = create<NotificationState>((set, get) => ({
+export const useNotificationStore = create<NotificationState>((set) => ({
   notifications: [],
   unreadCount: 0,
   isLoading: false,
@@ -97,7 +55,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   markRead: async (id: string) => {
     try {
-      await graphqlRequestWithAuth(MARK_READ_MUTATION, { id });
+      await graphqlRequestWithAuth(MARK_NOTIFICATION_READ_MUTATION, { id });
 
       set(state => ({
         notifications: state.notifications.map(n =>
@@ -112,7 +70,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   markAllRead: async () => {
     try {
-      await graphqlRequestWithAuth(MARK_ALL_READ_MUTATION, {});
+      await graphqlRequestWithAuth(MARK_ALL_NOTIFICATIONS_READ_MUTATION, {});
 
       set(state => ({
         notifications: state.notifications.map(n => ({ ...n, isRead: true, readAt: new Date().toISOString() })),

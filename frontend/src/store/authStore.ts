@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { graphqlRequest } from '@/utils/graphqlClient';
 import type { User, AuthPayload } from '@/types/graphql';
+import { ME_QUERY, REFRESH_TOKEN_MUTATION } from "@/graphql/operations";
 
 interface AuthState {
   user: User | null;
@@ -19,107 +20,6 @@ interface AuthState {
   refreshAccessToken: () => Promise<boolean>;
 }
 
-const AUTH_MUTATIONS = {
-  login: `
-    mutation Login($input: LoginInput!) {
-      login(input: $input) {
-        token
-        user {
-          id
-          email
-          fullName
-          avatarUrl
-          timezone
-          locale
-          isActive
-          isVerified
-          createdAt
-          updatedAt
-          settings {
-            theme
-            calendarDefaultView
-            weekStartDay
-            defaultReminderMinutes
-            notificationEmail
-            notificationPush
-            aiProvider
-            aiModel
-            language
-            dateFormat
-            timeFormat
-          }
-        }
-      }
-    }
-  `,
-  register: `
-    mutation Register($input: RegisterInput!) {
-      register(input: $input) {
-        token
-        user {
-          id
-          email
-          fullName
-          avatarUrl
-          timezone
-          locale
-          isActive
-          isVerified
-          createdAt
-          updatedAt
-          settings {
-            theme
-            calendarDefaultView
-            weekStartDay
-            defaultReminderMinutes
-            notificationEmail
-            notificationPush
-            aiProvider
-            aiModel
-            language
-            dateFormat
-            timeFormat
-          }
-        }
-      }
-    }
-  `,
-  me: `
-    query Me {
-      me {
-        id
-        email
-        fullName
-        avatarUrl
-        timezone
-        locale
-        isActive
-        isVerified
-        createdAt
-        updatedAt
-        settings {
-          theme
-          calendarDefaultView
-          weekStartDay
-          defaultReminderMinutes
-          notificationEmail
-          notificationPush
-          aiProvider
-          aiModel
-          language
-          dateFormat
-          timeFormat
-        }
-      }
-    }
-  `,
-  refreshToken: `
-    mutation RefreshToken {
-      refreshToken
-    }
-  `,
-};
-
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -133,6 +33,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           user: payload.user,
           accessToken: payload.token,
+          refreshToken: payload.refreshToken,
           isAuthenticated: true,
           isLoading: false,
         });
@@ -164,7 +65,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         try {
-          const response = await graphqlRequest<{ me: User }>(AUTH_MUTATIONS.me, {}, accessToken);
+          const response = await graphqlRequest<{ me: User }>(ME_QUERY, {}, accessToken);
 
           if (response.data?.me) {
             set({
@@ -198,9 +99,9 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           const response = await graphqlRequest<{ refreshToken: string }>(
-            AUTH_MUTATIONS.refreshToken,
+            REFRESH_TOKEN_MUTATION,
             {},
-            refreshToken
+            { refreshToken }
           );
 
           if (response.data?.refreshToken) {

@@ -1,6 +1,7 @@
 # My Life AI - Implementation Roadmap
 
 ## Phase 0: Repository and Architecture (Current)
+
 - [x] Inspect repository and establish conventions
 - [x] Configure agent skills and development environment
 - [x] Design system architecture
@@ -10,6 +11,7 @@
 - [x] Create roadmap and worklog
 
 ## Phase 1: Application Foundation
+
 - [x] Docker environment setup
 - [x] PostgreSQL service configuration
 - [x] Redis service configuration
@@ -21,6 +23,7 @@
 - [x] GraphQL Codegen setup
 
 ## Phase 2: Calendar MVP (Highest Priority)
+
 - [x] Large calendar interface
 - [x] Month/Week/Day/Year views
 - [x] Category management (master categories + custom)
@@ -34,6 +37,7 @@
 - [x] Dark/Light themes
 
 ## Phase 3: Reminders System
+
 - [x] Reminder configuration per event/category
 - [x] Background processing (Celery)
 - [x] Scheduled notifications
@@ -43,6 +47,7 @@
 - [x] Notification preferences
 
 ## Phase 4: AI Planner
+
 - [ ] Conversational interface
 - [ ] Configurable LLM providers
 - [ ] Streaming responses
@@ -53,6 +58,7 @@
 - [ ] Context-aware suggestions
 
 ## Phase 5: Personal Intelligence
+
 - [ ] Personal memory system
 - [ ] Context retrieval (pgvector)
 - [ ] Weekly summaries
@@ -61,6 +67,7 @@
 - [ ] Privacy controls
 
 ## Phase 6: Production Readiness
+
 - [ ] Automated test suite
 - [ ] Security review
 - [ ] Performance optimization

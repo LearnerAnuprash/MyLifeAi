@@ -7,17 +7,29 @@ interface GraphQLResponse<T> {
   errors?: Array<{ message: string; extensions?: { code: string } }>;
 }
 
+export interface GraphQLRequestAuth {
+  accessToken?: string;
+  refreshToken?: string;
+}
+
 export async function graphqlRequest<T>(
   query: string,
-  variables: Record<string, any> = {},
-  authToken?: string
+  variables: object = {},
+  auth: GraphQLRequestAuth | string = {}
 ): Promise<GraphQLResponse<T>> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
 
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
+  const { accessToken, refreshToken } =
+    typeof auth === 'string' ? { accessToken: auth, refreshToken: undefined } : auth;
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  if (refreshToken) {
+    headers['X-Refresh-Token'] = refreshToken;
   }
 
   const response = await fetch(GRAPHQL_ENDPOINT, {
@@ -35,10 +47,10 @@ export async function graphqlRequest<T>(
 
 export async function graphqlRequestWithAuth<T>(
   query: string,
-  variables: Record<string, any> = {}
+  variables: object = {}
 ): Promise<GraphQLResponse<T>> {
   const { accessToken } = useAuthStore.getState();
-  return graphqlRequest<T>(query, variables, accessToken || undefined);
+  return graphqlRequest<T>(query, variables, { accessToken: accessToken || undefined });
 }
 
 // GraphQL WebSocket subscription client (for future use)
@@ -64,7 +76,7 @@ export class GraphQLWSClient {
         this.handleMessage(message);
       };
 
-      this.ws.onerror = (error) => {
+      this.ws.onerror = () => {
         reject(new Error('WebSocket connection failed'));
       };
 

@@ -10,11 +10,11 @@ import enum
 
 class MemoryType(str, enum.Enum):
     """Memory type enumeration."""
-    GOAL = "goal"
-    PREFERENCE = "preference"
-    COMMITMENT = "commitment"
-    FACT = "fact"
-    SUMMARY = "summary"
+    GOAL = "GOAL"
+    PREFERENCE = "PREFERENCE"
+    COMMITMENT = "COMMITMENT"
+    FACT = "FACT"
+    SUMMARY = "SUMMARY"
 
 
 class UserMemory(Base):

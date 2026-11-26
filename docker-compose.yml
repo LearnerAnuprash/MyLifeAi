@@ -11,7 +11,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mylife_dev_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     ports:
       - "5433:5432"
     healthcheck:
@@ -68,6 +67,7 @@ services:
       # Mount only for hot-reloading specific directories, not the whole app
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
+      - ./backend/alembic.ini:/app/alembic.ini:ro
       - /app/__pycache__
     ports:
       - "8000:8000"
@@ -76,7 +76,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     restart: unless-stopped
     networks:
       - mylife-network
@@ -130,14 +130,15 @@ services:
       # Mount only for hot-reloading specific directories, not the whole app
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
-      - celery_beat_schedule:/app
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+      - celery_beat_schedule:/data
       - /app/__pycache__
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A app.workers.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule=/app/celerybeat-schedule
+    command: celery -A app.workers.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule=/data/celerybeat-schedule
     restart: unless-stopped
     networks:
       - mylife-network

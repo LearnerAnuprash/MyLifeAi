@@ -1,16 +1,16 @@
 """Memory service."""
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.memory import UserMemory, MemoryType
 from app.models.conversation import Conversation
 from app.graphql.types.inputs import CreateMemoryInput, UpdateMemoryInput, MemorySearchInput, MemoryFilterInput
 from app.graphql.types.memory import UserMemory as GQLUserMemory, MemoryConnection, MemoryEdge
 from app.graphql.types.event import PageInfo
+from app.graphql.serializers import memory_to_gql
 
 
 class MemoryService:
@@ -58,7 +58,7 @@ class MemoryService:
         if has_next_page:
             memories = memories[:first]
 
-        gql_memories = [await self._memory_to_gql(m) for m in memories]
+        gql_memories = [memory_to_gql(m) for m in memories]
 
         edges = [
             MemoryEdge(node=memory, cursor=str(memory.id))
@@ -109,7 +109,7 @@ class MemoryService:
         if not memory:
             return None
 
-        return await self._memory_to_gql(memory)
+        return memory_to_gql(memory)
 
     async def search_memory(
         self,
@@ -140,7 +140,7 @@ class MemoryService:
         result = await self.db.execute(query)
         memories = result.scalars().all()
 
-        return [await self._memory_to_gql(m) for m in memories]
+        return [memory_to_gql(m) for m in memories]
 
     async def create_memory(
         self,
@@ -172,7 +172,7 @@ class MemoryService:
         await self.db.commit()
         await self.db.refresh(memory)
 
-        return await self._memory_to_gql(memory)
+        return memory_to_gql(memory)
 
     async def update_memory(
         self,
@@ -200,7 +200,7 @@ class MemoryService:
         await self.db.commit()
         await self.db.refresh(memory)
 
-        return await self._memory_to_gql(memory)
+        return memory_to_gql(memory)
 
     async def delete_memory(
         self,
@@ -220,7 +220,7 @@ class MemoryService:
         if not memory:
             raise ValueError("Memory not found")
 
-        memory.deleted_at = datetime.utcnow()
+        memory.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
 
@@ -235,19 +235,3 @@ class MemoryService:
             memory = await self.create_memory(user_id, input)
             memories.append(memory)
         return memories
-
-    async def _memory_to_gql(self, memory: UserMemory) -> GQLUserMemory:
-        """Convert UserMemory model to GraphQL type."""
-        return GQLUserMemory(
-            id=memory.id,
-            user_id=memory.user_id,
-            memory_type=memory.memory_type,
-            title=memory.title,
-            content=memory.content,
-            embedding=memory.embedding,
-            source_conversation_id=memory.source_conversation_id,
-            confidence=memory.confidence,
-            is_active=memory.is_active,
-            created_at=memory.created_at,
-            updated_at=memory.updated_at,
-        )

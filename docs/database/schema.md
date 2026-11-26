@@ -67,7 +67,7 @@ CREATE TABLE events (
     is_recurring BOOLEAN DEFAULT false,
     rrule TEXT, -- RFC 5545 RRULE string
     rrule_original_start TIMESTAMPTZ, -- Original start for recurring instances
-    recurrence_exceptions UUID[], -- Array of exception event IDs
+    recurrence_exceptions TIMESTAMPTZ[] DEFAULT ARRAY[]::TIMESTAMPTZ[], -- Skipped occurrence timestamps
     preparation_notes TEXT,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -214,7 +214,7 @@ Using RFC 5545 RRULE standard with these considerations:
 - Store RRULE as text in `events.rrule`
 - Original recurring event has `is_recurring=true`
 - Exceptions stored as separate events with `rrule_original_start` pointing to original
-- `recurrence_exceptions` array on master event tracks exception IDs
+- `recurrence_exceptions` array on master event tracks skipped occurrence timestamps (UTC)
 - Backend expands recurring events for calendar queries (up to 2 years ahead)
 
 ## Timezone Handling

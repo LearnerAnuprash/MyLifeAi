@@ -64,8 +64,6 @@ export function AppSelect<T extends FieldValues>({
   id,
   className,
   style,
-  onBlur,
-  onFocus,
   ...rest
 }: AppSelectProps<T>) {
   const defaultValue = (mode === "multiple" ? [] : undefined) as PathValue<T, FieldPath<T>> | undefined;

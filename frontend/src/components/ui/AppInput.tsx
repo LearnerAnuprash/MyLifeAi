@@ -44,8 +44,6 @@ export function AppInput<T extends FieldValues>({
   type = "text",
   autoComplete,
   id,
-  onBlur,
-  onFocus,
   ...rest
 }: AppInputProps<T>) {
   return (
@@ -160,8 +158,6 @@ export function AppTextArea<T extends FieldValues>({
   placeholder,
   autoComplete,
   id,
-  onBlur,
-  onFocus,
   ...rest
 }: AppTextAreaProps<T>) {
   return (

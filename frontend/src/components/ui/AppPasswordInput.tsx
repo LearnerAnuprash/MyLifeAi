@@ -62,8 +62,6 @@ export function AppPasswordInput<T extends FieldValues>({
   visibilityToggleHideIcon,
   className,
   style,
-  onBlur,
-  onFocus,
   ...rest
 }: AppPasswordInputProps<T>) {
   const [showPassword, setShowPassword] = useState(false);
@@ -221,8 +219,6 @@ export function AppConfirmPasswordInput<T extends FieldValues>({
   visibilityToggleHideIcon,
   className,
   style,
-  onBlur,
-  onFocus,
   ...rest
 }: AppConfirmPasswordInputProps<T>) {
   const [showPassword, setShowPassword] = useState(false);

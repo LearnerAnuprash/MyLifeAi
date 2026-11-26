@@ -13,6 +13,7 @@ from app.graphql.types.event import EventReminder
 class AuthPayload:
     """Authentication payload."""
     token: str
+    refresh_token: str
     user: "User"
 
 

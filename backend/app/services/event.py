@@ -1,25 +1,32 @@
 """Event service."""
+from dataclasses import fields
 from typing import List, Optional
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from dateutil import rrule as rrule_lib
-from dateutil.parser import parse as parse_datetime
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.event import Event, EventReminder, EventStatus, EventPriority
 from app.models.category import Category
-from app.models.user import User
+from app.models.conversation import Conversation
 from app.graphql.types.inputs import (
     CreateEventInput,
     UpdateEventInput,
-    CreateEventReminderInput,
     EventFilterInput,
     BulkUpdateEventInput,
+    AIEventProposalInput,
 )
-from app.graphql.types.event import Event as GQLEvent, EventConnection, EventEdge, PageInfo, EventReminder as GQLEventReminder
-from app.graphql.types.category import Category as GQLCategory
+from app.graphql.types.event import (
+    Event as GQLEvent,
+    EventConnection,
+    EventEdge,
+    PageInfo,
+    EventReminder as GQLEventReminder,
+)
+from app.graphql.types.payloads import ProposedEvent
+from app.graphql.serializers import category_to_gql, event_to_gql
 
 
 class EventService:
@@ -42,7 +49,7 @@ class EventService:
             Event.user_id == user_id,
             Event.deleted_at.is_(None),
         ).options(
-            selectinload(Event.category),
+            selectinload(Event.category).selectinload(Category.children),
             selectinload(Event.reminders),
         )
 
@@ -99,7 +106,7 @@ class EventService:
             events = list(reversed(events))
 
         # Convert to GraphQL types
-        gql_events = [await self._event_to_gql(event) for event in events]
+        gql_events = [event_to_gql(event) for event in events]
 
         # Build edges
         edges = [
@@ -181,7 +188,7 @@ class EventService:
         if not event:
             return None
 
-        return await self._event_to_gql(event)
+        return event_to_gql(event)
 
     async def get_upcoming_events(
         self,
@@ -190,7 +197,7 @@ class EventService:
         days: int = 30,
     ) -> List[GQLEvent]:
         """Get upcoming events."""
-        now = datetime.utcnow()
+        now = datetime.now(dt_timezone.utc)
         end_date = now + timedelta(days=days)
 
         result = await self.db.execute(
@@ -211,7 +218,7 @@ class EventService:
         )
         events = result.scalars().all()
 
-        return [await self._event_to_gql(event) for event in events]
+        return [event_to_gql(event) for event in events]
 
     async def get_past_events(
         self,
@@ -220,7 +227,7 @@ class EventService:
         days: int = 30,
     ) -> List[GQLEvent]:
         """Get past events."""
-        now = datetime.utcnow()
+        now = datetime.now(dt_timezone.utc)
         start_date = now - timedelta(days=days)
 
         result = await self.db.execute(
@@ -240,7 +247,7 @@ class EventService:
         )
         events = result.scalars().all()
 
-        return [await self._event_to_gql(event) for event in events]
+        return [event_to_gql(event) for event in events]
 
     async def get_events_by_date_range(
         self,
@@ -261,7 +268,7 @@ class EventService:
                 Event.end_time > start_date,
             )
             .options(
-                selectinload(Event.category),
+                selectinload(Event.category).selectinload(Category.children),
                 selectinload(Event.reminders),
             )
         )
@@ -277,22 +284,56 @@ class EventService:
                 Event.rrule.isnot(None),
             )
             .options(
-                selectinload(Event.category),
+                selectinload(Event.category).selectinload(Category.children),
                 selectinload(Event.reminders),
             )
         )
         recurring_events = recurring_result.scalars().all()
 
-        # Expand recurring events
-        all_events = list(events)
+        # Expand recurring events and serialize
+        all_events = [event_to_gql(event) for event in events]
         for event in recurring_events:
+            # Get category data for serialization
+            category_data = None
+            if event.category:
+                category_data = {
+                    "id": event.category.id,
+                    "user_id": event.category.user_id,
+                    "parent_id": event.category.parent_id,
+                    "name": event.category.name,
+                    "description": event.category.description,
+                    "color": event.category.color,
+                    "icon": event.category.icon,
+                    "is_system": event.category.is_system,
+                    "sort_order": event.category.sort_order,
+                    "default_reminder_minutes": event.category.default_reminder_minutes,
+                    "created_at": event.category.created_at,
+                    "updated_at": event.category.updated_at,
+                }
+
+            # Get reminders data for serialization
+            reminders_data = []
+            if event.reminders:
+                for reminder in event.reminders:
+                    reminders_data.append({
+                        "id": reminder.id,
+                        "event_id": reminder.event_id,
+                        "user_id": reminder.user_id,
+                        "minutes_before": reminder.minutes_before,
+                        "notification_type": reminder.notification_type,
+                        "is_sent": reminder.is_sent,
+                        "sent_at": reminder.sent_at,
+                        "created_at": reminder.created_at,
+                    })
+
             instances = self._expand_recurring_event(event, start_date, end_date, timezone)
-            all_events.extend(instances)
+            for instance in instances:
+                all_events.append(event_to_gql(instance, reminders_data, category_data))
 
         # Sort by start time
         all_events.sort(key=lambda e: e.start_time)
 
-        return [await self._event_to_gql(event) for event in all_events]
+        return all_events
 
     async def get_recurring_instances(
         self,
@@ -322,7 +363,7 @@ class EventService:
             return []
 
         instances = self._expand_recurring_event(event, start_date, end_date, timezone)
-        return [await self._event_to_gql(inst) for inst in instances]
+        return [event_to_gql(inst) for inst in instances]
 
     def _expand_recurring_event(
         self,
@@ -331,65 +372,67 @@ class EventService:
         end_date: datetime,
         timezone: str,
     ) -> List[Event]:
-        """Expand a recurring event into instances within the date range."""
+        """Expand a recurring event into instances within the date range.
+
+        Occurrences listed in ``recurrence_exceptions`` are skipped. Exceptions
+        store occurrence timestamps (timezone-aware), not event IDs.
+        """
         if not event.rrule:
             return []
 
+        def _as_utc(value: datetime) -> datetime:
+            if value.tzinfo is None:
+                return value.replace(tzinfo=dt_timezone.utc)
+            return value.astimezone(dt_timezone.utc)
+
+        exception_starts = {_as_utc(value) for value in (event.recurrence_exceptions or [])}
+
         try:
-            # Parse RRULE
             rule = rrule_lib.rrulestr(event.rrule, dtstart=event.start_time)
-
-            # Generate occurrences
-            occurrences = rule.between(
-                start_date,
-                end_date,
-                inc=True,
-            )
-
-            instances = []
-            for occ in occurrences:
-                # Skip exceptions
-                if event.recurrence_exceptions:
-                    # Check if this occurrence is an exception
-                    pass  # Would need to check against exception events
-
-                # Create instance event
-                duration = event.end_time - event.start_time
-                instance = Event(
-                    id=uuid.uuid4(),
-                    user_id=event.user_id,
-                    category_id=event.category_id,
-                    title=event.title,
-                    description=event.description,
-                    location=event.location,
-                    start_time=occ,
-                    end_time=occ + duration,
-                    all_day=event.all_day,
-                    timezone=event.timezone,
-                    priority=event.priority,
-                    status=event.status,
-                    is_recurring=False,  # Instances are not recurring
-                    rrule=None,
-                    rrule_original_start=event.start_time,
-                    preparation_notes=event.preparation_notes,
-                    created_at=event.created_at,
-                    updated_at=event.updated_at,
-                )
-                # Copy category and reminders
-                instance.category = event.category
-                instance.reminders = event.reminders
-                instances.append(instance)
-
-            return instances
-        except Exception:
-            # If RRULE parsing fails, return empty
+            occurrences = rule.between(start_date, end_date, inc=True)
+        except (ValueError, TypeError):
             return []
+
+        duration = event.end_time - event.start_time
+        instances = []
+        for occ in occurrences:
+            occurrence_start = _as_utc(occ)
+            if occurrence_start in exception_starts:
+                continue
+
+            instance = Event(
+                id=uuid.uuid4(),
+                user_id=event.user_id,
+                category_id=event.category_id,
+                title=event.title,
+                description=event.description,
+                location=event.location,
+                start_time=occ,
+                end_time=occ + duration,
+                all_day=event.all_day,
+                timezone=event.timezone,
+                priority=event.priority,
+                status=event.status,
+                is_recurring=False,
+                rrule=None,
+                rrule_original_start=event.start_time,
+                recurrence_exceptions=[],
+                preparation_notes=event.preparation_notes,
+                created_at=event.created_at,
+                updated_at=event.updated_at,
+            )
+            instances.append(instance)
+
+        return instances
 
     async def create_event(self, user_id: uuid.UUID, input: CreateEventInput) -> GQLEvent:
         """Create a new event."""
+        from app.models.event import EventReminder
+        from app.models.category import Category
+
         # Verify category exists and belongs to user
+        category = None
         if input.category_id:
-            from app.models.category import Category
             result = await self.db.execute(
                 select(Category).where(
                     Category.id == input.category_id,
@@ -421,7 +464,8 @@ class EventService:
         self.db.add(event)
         await self.db.flush()
 
-        # Create reminders
+        # Create reminders and build plain dicts for serialization (avoid SQLAlchemy objects)
+        reminders_data = []
         if input.reminders:
             for reminder_input in input.reminders:
                 reminder = EventReminder(
@@ -431,11 +475,41 @@ class EventService:
                     notification_type=reminder_input.notification_type,
                 )
                 self.db.add(reminder)
+                await self.db.flush()
+                # Build plain dict for serialization
+                reminders_data.append({
+                    "id": reminder.id,
+                    "event_id": reminder.event_id,
+                    "user_id": reminder.user_id,
+                    "minutes_before": reminder.minutes_before,
+                    "notification_type": reminder.notification_type,
+                    "is_sent": reminder.is_sent,
+                    "sent_at": reminder.sent_at,
+                    "created_at": reminder.created_at,
+                })
 
-        await self.db.commit()
-        await self.db.refresh(event)
+        await self.db.flush()
 
-        return await self._event_to_gql(event)
+        # Build plain category dict if available (to avoid lazy loading children)
+        category_data = None
+        if category:
+            category_data = {
+                "id": category.id,
+                "user_id": category.user_id,
+                "parent_id": category.parent_id,
+                "name": category.name,
+                "description": category.description,
+                "color": category.color,
+                "icon": category.icon,
+                "is_system": category.is_system,
+                "sort_order": category.sort_order,
+                "default_reminder_minutes": category.default_reminder_minutes,
+                "created_at": category.created_at,
+                "updated_at": category.updated_at,
+            }
+
+        # Serialize with manually provided reminders and category data to avoid lazy loading
+        return event_to_gql(event, reminders_data, category_data)
 
     async def update_event(
         self,
@@ -462,14 +536,18 @@ class EventService:
             raise ValueError("Event not found")
 
         # Update fields
-        update_data = input.model_dump(exclude_unset=True)
+        update_data = {
+            field.name: getattr(input, field.name)
+            for field in fields(input)
+            if getattr(input, field.name) is not None
+        }
         for field, value in update_data.items():
             setattr(event, field, value)
 
         await self.db.commit()
         await self.db.refresh(event)
 
-        return await self._event_to_gql(event)
+        return event_to_gql(event)
 
     async def delete_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> bool:
         """Delete an event (soft delete)."""
@@ -485,7 +563,7 @@ class EventService:
         if not event:
             raise ValueError("Event not found")
 
-        event.deleted_at = datetime.utcnow()
+        event.deleted_at = datetime.now(dt_timezone.utc)
         await self.db.commit()
         return True
 
@@ -549,7 +627,7 @@ class EventService:
         await self.db.commit()
         await self.db.refresh(new_event)
 
-        return await self._event_to_gql(new_event)
+        return event_to_gql(new_event)
 
     async def complete_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> GQLEvent:
         """Mark event as completed."""
@@ -571,12 +649,12 @@ class EventService:
             raise ValueError("Event not found")
 
         event.status = EventStatus.COMPLETED
-        event.completed_at = datetime.utcnow()
+        event.completed_at = datetime.now(dt_timezone.utc)
 
         await self.db.commit()
         await self.db.refresh(event)
 
-        return await self._event_to_gql(event)
+        return event_to_gql(event)
 
     async def bulk_create_events(
         self,
@@ -618,7 +696,7 @@ class EventService:
         events = result.scalars().all()
 
         for event in events:
-            event.deleted_at = datetime.utcnow()
+            event.deleted_at = datetime.now(dt_timezone.utc)
 
         await self.db.commit()
         return True
@@ -648,8 +726,13 @@ class EventService:
         # Create exception event
         exception_event = await self.create_event(user_id, input)
 
-        # Add to master event's exceptions
-        master_event.recurrence_exceptions = list(master_event.recurrence_exceptions) + [exception_event.id]
+        # Record the skipped occurrence timestamp on the master event.
+        exception_start = exception_date
+        if exception_start.tzinfo is None:
+            exception_start = exception_start.replace(tzinfo=dt_timezone.utc)
+        master_event.recurrence_exceptions = list(master_event.recurrence_exceptions or []) + [
+            exception_start
+        ]
 
         await self.db.commit()
 
@@ -660,7 +743,7 @@ class EventService:
         user_id: uuid.UUID,
         event_id: uuid.UUID,
         input: UpdateEventInput,
-    ) -> List[GQLEvent]:
+    ) -> GQLEvent:
         """Update entire recurring series (master event)."""
         result = await self.db.execute(
             select(Event)
@@ -681,15 +764,18 @@ class EventService:
             raise ValueError("Recurring event not found")
 
         # Update master event
-        update_data = input.model_dump(exclude_unset=True)
+        update_data = {
+            field.name: getattr(input, field.name)
+            for field in fields(input)
+            if getattr(input, field.name) is not None
+        }
         for field, value in update_data.items():
             setattr(master_event, field, value)
 
         await self.db.commit()
         await self.db.refresh(master_event)
 
-        # Return updated master event
-        return [await self._event_to_gql(master_event)]
+        return event_to_gql(master_event)
 
     async def delete_recurring_series(
         self,
@@ -713,17 +799,9 @@ class EventService:
             raise ValueError("Recurring event not found")
 
         if delete_future:
-            # Soft delete master and all future instances
-            master_event.deleted_at = datetime.utcnow()
-            # Also delete exception events
-            if master_event.recurrence_exceptions:
-                for exc_id in master_event.recurrence_exceptions:
-                    exc_result = await self.db.execute(
-                        select(Event).where(Event.id == exc_id)
-                    )
-                    exc_event = exc_result.scalar_one_or_none()
-                    if exc_event:
-                        exc_event.deleted_at = datetime.utcnow()
+            # Soft delete master; occurrences are generated from rrule, so this
+            # removes the whole future series.
+            master_event.deleted_at = datetime.now(dt_timezone.utc)
         else:
             # Only delete master, keep past instances
             master_event.is_recurring = False
@@ -732,60 +810,152 @@ class EventService:
         await self.db.commit()
         return True
 
-    async def _event_to_gql(self, event: Event) -> GQLEvent:
-        """Convert Event model to GraphQL type."""
-        category = None
-        if event.category:
-            category = GQLCategory(
-                id=event.category.id,
-                user_id=event.category.user_id,
-                parent_id=event.category.parent_id,
-                name=event.category.name,
-                description=event.category.description,
-                color=event.category.color,
-                icon=event.category.icon,
-                is_system=event.category.is_system,
-                sort_order=event.category.sort_order,
-                default_reminder_minutes=event.category.default_reminder_minutes,
-                children=[],
-                created_at=event.category.created_at,
-                updated_at=event.category.updated_at,
+    async def get_calendar_events(
+        self,
+        user_id: uuid.UUID,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> List[GQLEvent]:
+        """Get scheduled events overlapping a calendar range."""
+        result = await self.db.execute(
+            select(Event)
+            .where(
+                Event.user_id == user_id,
+                Event.deleted_at.is_(None),
+                Event.status == EventStatus.SCHEDULED,
+                Event.start_time < end_date,
+                Event.end_time > start_date,
             )
+            .options(
+                selectinload(Event.category).selectinload(Category.children),
+                selectinload(Event.reminders),
+            )
+            .order_by(Event.start_time)
+        )
+        return [event_to_gql(event) for event in result.scalars().all()]
 
-        reminders = []
-        if event.reminders:
-            for reminder in event.reminders:
-                reminders.append(GQLEventReminder(
-                    id=reminder.id,
-                    event_id=reminder.event_id,
-                    user_id=reminder.user_id,
+    async def get_today_events(self, user_id: uuid.UUID) -> List[GQLEvent]:
+        """Get today's scheduled events (UTC day boundaries)."""
+        now = datetime.now(dt_timezone.utc)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return await self.get_calendar_events(user_id, start, end)
+
+    async def get_this_week_events(self, user_id: uuid.UUID) -> List[GQLEvent]:
+        """Get this week's scheduled events (UTC, week starts Monday)."""
+        now = datetime.now(dt_timezone.utc)
+        start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        end = start + timedelta(days=7)
+        return await self.get_calendar_events(user_id, start, end)
+
+    async def get_this_month_events(self, user_id: uuid.UUID) -> List[GQLEvent]:
+        """Get this month's scheduled events (UTC month boundaries)."""
+        now = datetime.now(dt_timezone.utc)
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if now.month == 12:
+            end = start.replace(year=now.year + 1, month=1)
+        else:
+            end = start.replace(month=now.month + 1)
+        return await self.get_calendar_events(user_id, start, end)
+
+    async def _require_conversation(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+    ) -> Conversation:
+        result = await self.db.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user_id,
+                Conversation.deleted_at.is_(None),
+            )
+        )
+        conversation = result.scalar_one_or_none()
+        if not conversation:
+            raise ValueError("Conversation not found")
+        return conversation
+
+    async def propose_events(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        proposal: AIEventProposalInput,
+    ) -> List[ProposedEvent]:
+        """Build ephemeral event proposals from an AI planner suggestion."""
+        await self._require_conversation(user_id, conversation_id)
+
+        category = None
+        if proposal.category_id:
+            result = await self.db.execute(
+                select(Category).where(
+                    Category.id == proposal.category_id,
+                    Category.user_id == user_id,
+                    Category.deleted_at.is_(None),
+                )
+            )
+            category = result.scalar_one_or_none()
+
+        now = datetime.now(dt_timezone.utc)
+        proposed: List[ProposedEvent] = []
+        for suggested_start in proposal.suggested_dates:
+            start = suggested_start
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_timezone.utc)
+            end = start + timedelta(minutes=proposal.duration_minutes)
+            proposal_id = uuid.uuid4()
+
+            reminders = [
+                GQLEventReminder(
+                    id=uuid.uuid4(),
+                    event_id=proposal_id,
+                    user_id=user_id,
                     minutes_before=reminder.minutes_before,
                     notification_type=reminder.notification_type,
-                    is_sent=reminder.is_sent,
-                    sent_at=reminder.sent_at,
-                    created_at=reminder.created_at,
-                ))
+                    is_sent=False,
+                    sent_at=None,
+                    created_at=now,
+                )
+                for reminder in (proposal.reminders or [])
+            ]
 
-        return GQLEvent(
-            id=event.id,
-            user_id=event.user_id,
-            category=category,
-            title=event.title,
-            description=event.description,
-            location=event.location,
-            start_time=event.start_time,
-            end_time=event.end_time,
-            all_day=event.all_day,
-            timezone=event.timezone,
-            priority=event.priority,
-            status=event.status,
-            is_recurring=event.is_recurring,
-            rrule=event.rrule,
-            rrule_original_start=event.rrule_original_start,
-            recurrence_exceptions=event.recurrence_exceptions,
-            preparation_notes=event.preparation_notes,
-            completed_at=event.completed_at,
-            created_at=event.created_at,
-            updated_at=event.updated_at,
-            reminders=reminders,
-        )
+            proposed.append(
+                ProposedEvent(
+                    id=proposal_id,
+                    title=proposal.title,
+                    description=proposal.description,
+                    suggested_start_time=start,
+                    suggested_end_time=end,
+                    category=category_to_gql(category) if category else None,
+                    priority=proposal.priority,
+                    preparation_notes=proposal.preparation_notes,
+                    reminders=reminders,
+                )
+            )
+
+        return proposed
+
+    async def confirm_proposed_events(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        event_ids: List[uuid.UUID],
+    ) -> List[GQLEvent]:
+        """Confirm proposed events.
+
+        Proposals are currently ephemeral, so there is no persisted payload to
+        materialise. Kept as a valid no-op until proposal persistence lands.
+        """
+        await self._require_conversation(user_id, conversation_id)
+        return []
+
+    async def reject_proposed_events(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        event_ids: List[uuid.UUID],
+    ) -> bool:
+        """Reject proposed events."""
+        await self._require_conversation(user_id, conversation_id)
+        return True

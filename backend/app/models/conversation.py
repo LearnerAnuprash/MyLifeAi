@@ -10,10 +10,10 @@ import enum
 
 class ConversationRole(str, enum.Enum):
     """Message role enumeration."""
-    USER = "user"
-    ASSISTANT = "assistant"
-    SYSTEM = "system"
-    TOOL = "tool"
+    USER = "USER"
+    ASSISTANT = "ASSISTANT"
+    SYSTEM = "SYSTEM"
+    TOOL = "TOOL"
 
 
 class Conversation(Base):
@@ -109,14 +109,18 @@ class Message(Base):
     tool_calls: Mapped[Optional[dict]] = mapped_column(
         JSON,
         nullable=True,
+        default=None,
     )
     tool_call_id: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
+        default=None,
     )
-    metadata: Mapped[Optional[dict]] = mapped_column(
+    message_metadata: Mapped[Optional[dict]] = mapped_column(
+        "metadata",
         JSON,
         nullable=True,
+        default=None,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -409,6 +409,7 @@ export interface NotificationFilterInput {
 // Payload Types
 export interface AuthPayload {
   token: string;
+  refreshToken: string;
   user: User;
 }
 

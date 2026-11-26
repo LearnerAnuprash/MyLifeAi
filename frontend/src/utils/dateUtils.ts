@@ -1,9 +1,9 @@
-import { format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths, isSameDay, isSameMonth, isToday, isBefore, isAfter, differenceInMinutes, differenceInHours, differenceInDays } from 'date-fns';
+import { parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths, isSameDay, isSameMonth, isToday, isBefore, isAfter, differenceInMinutes, differenceInHours, differenceInDays } from 'date-fns';
 import { fromZonedTime, toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 export const TIMEZONE = 'UTC';
 
-export function setTimezone(timezone: string) {
+export function setTimezone(_timezone: string) {
   // This would be called with user's timezone
 }
 

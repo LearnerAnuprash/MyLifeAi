@@ -8,41 +8,7 @@ import {
 } from "@ant-design/icons";
 import { graphqlRequestWithAuth } from "@/utils/graphqlClient";
 import { useCategoryStore } from "@/store/categoryStore";
-
-
-const CREATE_CATEGORY_MUTATION = `
-  mutation CreateCategory($input: CreateCategoryInput!) {
-    createCategory(input: $input) {
-      id
-      name
-      color
-      icon
-      parentId
-      isSystem
-      sortOrder
-    }
-  }
-`;
-
-const UPDATE_CATEGORY_MUTATION = `
-  mutation UpdateCategory($id: UUID!, $input: UpdateCategoryInput!) {
-    updateCategory(id: $id, input: $input) {
-      id
-      name
-      color
-      icon
-      parentId
-      isSystem
-      sortOrder
-    }
-  }
-`;
-
-const DELETE_CATEGORY_MUTATION = `
-  mutation DeleteCategory($id: UUID!) {
-    deleteCategory(id: $id)
-  }
-`;
+import { CREATE_CATEGORY_MUTATION, UPDATE_CATEGORY_MUTATION, DELETE_CATEGORY_MUTATION } from "@/graphql/operations";
 
 
 interface Category {
@@ -272,7 +238,7 @@ export function CategoryManagement() {
                 style={{ width: "100%" }}
                 showSearch
                 options={DEFAULT_COLORS.map(c => ({ value: c, label: c }))}
-                dropdownRender={(_menu: any) => (
+                dropdownRender={() => (
                   <div style={{ padding: 8 }}>
                     {DEFAULT_COLORS.map(color => (
                       <div

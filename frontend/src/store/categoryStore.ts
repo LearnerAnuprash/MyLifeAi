@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { graphqlRequestWithAuth } from '@/utils/graphqlClient';
+import { CATEGORIES_QUERY, CREATE_CATEGORY_MUTATION, UPDATE_CATEGORY_MUTATION, DELETE_CATEGORY_MUTATION, REORDER_CATEGORIES_MUTATION } from "@/graphql/operations";
 
 interface Category {
   id: string;
@@ -29,133 +30,7 @@ interface CategoryState {
   reorderCategories: (ids: string[]) => Promise<Category[]>;
 }
 
-const CATEGORIES_QUERY = `
-  query Categories {
-    categories {
-      categories {
-        id
-        userId
-        parentId
-        name
-        description
-        color
-        icon
-        isSystem
-        sortOrder
-        defaultReminderMinutes
-        children {
-          id
-          userId
-          parentId
-          name
-          description
-          color
-          icon
-          isSystem
-          sortOrder
-          defaultReminderMinutes
-          children {
-            id
-            name
-          }
-          createdAt
-          updatedAt
-        }
-        createdAt
-        updatedAt
-      }
-      flatList {
-        id
-        userId
-        parentId
-        name
-        description
-        color
-        icon
-        isSystem
-        sortOrder
-        defaultReminderMinutes
-        children {
-          id
-          name
-        }
-        createdAt
-        updatedAt
-      }
-    }
-  }
-`;
-
-const CREATE_CATEGORY_MUTATION = `
-  mutation CreateCategory($input: CreateCategoryInput!) {
-    createCategory(input: $input) {
-      id
-      userId
-      parentId
-      name
-      description
-      color
-      icon
-      isSystem
-      sortOrder
-      defaultReminderMinutes
-      children { id name }
-      createdAt
-      updatedAt
-    }
-  }
-`;
-
-const UPDATE_CATEGORY_MUTATION = `
-  mutation UpdateCategory($id: UUID!, $input: UpdateCategoryInput!) {
-    updateCategory(id: $id, input: $input) {
-      id
-      userId
-      parentId
-      name
-      description
-      color
-      icon
-      isSystem
-      sortOrder
-      defaultReminderMinutes
-      children { id name }
-      createdAt
-      updatedAt
-    }
-  }
-`;
-
-const DELETE_CATEGORY_MUTATION = `
-  mutation DeleteCategory($id: UUID!) {
-    deleteCategory(id: $id)
-  }
-`;
-
-const REORDER_CATEGORIES_MUTATION = `
-  mutation ReorderCategories($categoryIds: [UUID!]!) {
-    reorderCategories(categoryIds: $categoryIds) {
-      id
-      sortOrder
-    }
-  }
-`;
-
-function flattenCategories(categories: Category[]): Category[] {
-  const result: Category[] = [];
-  function traverse(cats: Category[]) {
-    cats.forEach(cat => {
-      result.push(cat);
-      if (cat.children.length > 0) {
-        traverse(cat.children);
-      }
-    });
-  }
-  traverse(categories);
-  return result;
-}
-
-export const useCategoryStore = create<CategoryState>((set, get) => ({
+export const useCategoryStore = create<CategoryState>((set) => ({
   categories: [],
   flatCategories: [],
   isLoading: false,

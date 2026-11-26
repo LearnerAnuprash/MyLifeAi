@@ -10,12 +10,12 @@ import enum
 
 class NotificationCategory(str, enum.Enum):
     """Notification category enumeration."""
-    REMINDER = "reminder"
-    EVENT_CREATED = "event_created"
-    EVENT_UPDATED = "event_updated"
-    EVENT_DELETED = "event_deleted"
-    AI_SUGGESTION = "ai_suggestion"
-    SYSTEM = "system"
+    REMINDER = "REMINDER"
+    EVENT_CREATED = "EVENT_CREATED"
+    EVENT_UPDATED = "EVENT_UPDATED"
+    EVENT_DELETED = "EVENT_DELETED"
+    AI_SUGGESTION = "AI_SUGGESTION"
+    SYSTEM = "SYSTEM"
 
 
 class Notification(Base):
